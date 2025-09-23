@@ -222,9 +222,16 @@ async function createUser() {
         
         window.currentUser = userData;
         document.getElementById('currentUserName').textContent = userName;
-        
         showMainContent();
         loadGroups();
+        
+        // ✅ ADD THIS: Initialize real-time sync
+        if (typeof window.startRealtimeSync === 'function') {
+            setTimeout(() => {
+                window.startRealtimeSync();
+            }, 1000); // Give time for groups to load
+        }
+        
         showNotification(`Welcome, ${userName}!`);
         
     } catch (error) {
@@ -308,12 +315,19 @@ async function switchToUser(userId) {
     // Store as current user
     localStorage.setItem('spliteasy_current_user', JSON.stringify(fullUserData));
     storePreviousUser(fullUserData); // Update last used time
-    
-    window.currentUser = fullUserData;
+
+       window.currentUser = fullUserData;
     document.getElementById('currentUserName').textContent = userData.name;
-    
     showMainContent();
     loadGroups();
+    
+    // ✅ ADD THIS: Initialize real-time sync
+    if (typeof window.startRealtimeSync === 'function') {
+        setTimeout(() => {
+            window.startRealtimeSync();
+        }, 1000);
+    }
+    
     showNotification(`Switched to ${userData.name}`);
 }
 

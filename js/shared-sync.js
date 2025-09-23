@@ -584,7 +584,451 @@ async function deleteExpenseFromDatabase(expenseId) {
     }
 }
 
-// Make functions available globally
+// Add these functions to shared-sync.js
+
+// Fetch group from database by ID
+async function fetchGroupFromDatabase(groupId) {
+    if (window.splitEasySync.isOffline || !window.supabaseClient) {
+        console.log('Cannot fetch group - offline or no database connection');
+        return null;
+    }
+    
+    try {
+        console.log('🔍 Fetching group from database:', groupId);
+        
+        // Get group data
+        const { data: groupData, error: groupError } = await window.supabaseClient
+            .from('groups')
+            .select('*')
+            .eq('id', groupId)
+            .single();
+            
+        if (groupError) {
+            console.error('Group not found in database:', groupError);
+            return null;
+        }
+        
+        // Get group expenses
+        const { data: expensesData, error: expensesError } = await window.supabaseClient
+            .from('expenses')
+            .select('*')
+            .eq('group_id', groupId);
+            
+        if (expensesError) {
+            console.warn('Failed to fetch expenses:', expensesError);
+        }
+        
+        // Combine group with expenses
+        const completeGroup = {
+            id: groupData.id,
+            name: groupData.name,
+            members: groupData.members || [],
+            createdBy: groupData.created_by,
+            createdAt: groupData.created_at,
+            totalExpenses: groupData.total_expenses || 0,
+            expenses: (expensesData || []).map(expense => ({
+                id: expense.id,
+                name: expense.description,
+                amount: expense.amount,
+                paidBy: expense.paid_by,
+                splitBetween: expense.split_between || [],
+                date: expense.created_at,
+                perPersonAmount: expense.per_person_amount || 0
+            }))
+        };
+        
+        console.log('✅ Group fetched successfully:', completeGroup.name);
+        return completeGroup;
+        
+    } catch (error) {
+        console.error('❌ Failed to fetch group from database:', error);
+        return null;
+    }
+}
+
+// Join user to existing group
+async function joinUserToGroup(groupId, userId) {
+    if (window.splitEasySync.isOffline || !window.supabaseClient) {
+        console.log('Cannot join group - offline or no database connection');
+        return false;
+    }
+    
+    try {
+        console.log('👤 Adding user to group:', userId, '→', groupId);
+        
+        // Get current group data
+        const { data: groupData, error: fetchError } = await window.supabaseClient
+            .from('groups')
+            .select('members')
+            .eq('id', groupId)
+            .single();
+            
+        if (fetchError) throw fetchError;
+        
+        const currentMembers = groupData.members || [];
+        
+        // Check if user is already a member
+        if (currentMembers.includes(userId)) {
+            console.log('User already a member of this group');
+            return true;
+        }
+        
+        // Add user to members array
+        const updatedMembers = [...currentMembers, userId];
+        
+        // Update group in database
+        const { error: updateError } = await window.supabaseClient
+            .from('groups')
+            .update({ 
+                members: updatedMembers,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', groupId);
+            
+        if (updateError) throw updateError;
+        
+        console.log('✅ User successfully joined group');
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Failed to join user to group:', error);
+        return false;
+    }
+}
+
+// ========================================
+// REAL-TIME SYNC SYSTEM
+// ========================================
+
+// Real-time subscriptions storage
+if (!window.splitEasyRealtime) {
+    window.splitEasyRealtime = {
+        subscriptions: [],
+        isSubscribed: false,
+        currentUserId: null,
+        currentGroupIds: []
+    };
+}
+
+// Initialize real-time subscriptions
+async function initializeRealTimeSync() {
+    if (!window.supabaseClient || !window.currentUser) {
+        console.log('Cannot initialize real-time - missing client or user');
+        return;
+    }
+    
+    console.log('🔄 Initializing real-time sync...');
+    
+    // Clean up existing subscriptions
+    cleanupRealtimeSubscriptions();
+    
+    // Subscribe to user's groups changes
+    await subscribeToUserGroups();
+    
+    // Subscribe to expenses changes
+    await subscribeToExpensesChanges();
+    
+    // Subscribe to user changes
+    await subscribeToUserChanges();
+    
+    window.splitEasyRealtime.isSubscribed = true;
+    window.splitEasyRealtime.currentUserId = window.currentUser.id;
+    
+    console.log('✅ Real-time sync initialized successfully');
+    showNotification('Real-time sync enabled - you\'ll see live updates!', 'success');
+}
+
+// Subscribe to groups table changes
+async function subscribeToUserGroups() {
+    try {
+        const subscription = window.supabaseClient
+            .channel('user-groups')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'groups',
+                filter: `members.cs.{${window.currentUser.id}}`
+            }, handleGroupChange)
+            .subscribe();
+            
+        window.splitEasyRealtime.subscriptions.push(subscription);
+        console.log('📊 Subscribed to groups changes');
+    } catch (error) {
+        console.error('Failed to subscribe to groups:', error);
+    }
+}
+
+// Subscribe to expenses table changes  
+async function subscribeToExpensesChanges() {
+    try {
+        // Get current user's group IDs
+        const localGroups = loadFromLocalStorage();
+        const groupIds = localGroups.map(g => g.id);
+        
+        if (groupIds.length === 0) return;
+        
+        const subscription = window.supabaseClient
+            .channel('user-expenses')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public', 
+                table: 'expenses'
+            }, handleExpenseChange)
+            .subscribe();
+            
+        window.splitEasyRealtime.subscriptions.push(subscription);
+        console.log('💰 Subscribed to expenses changes');
+    } catch (error) {
+        console.error('Failed to subscribe to expenses:', error);
+    }
+}
+
+// Subscribe to users table changes
+async function subscribeToUserChanges() {
+    try {
+        const subscription = window.supabaseClient
+            .channel('users-changes')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'users'
+            }, handleUserChange)
+            .subscribe();
+            
+        window.splitEasyRealtime.subscriptions.push(subscription);
+        console.log('👤 Subscribed to user changes');
+    } catch (error) {
+        console.error('Failed to subscribe to users:', error);
+    }
+}
+
+// Handle real-time group changes
+async function handleGroupChange(payload) {
+    console.log('🔄 Real-time group change:', payload);
+    
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+    
+    try {
+        // Don't process changes made by current user
+        if (newRecord?.updated_by === window.currentUser?.id) {
+            return;
+        }
+        
+        let localGroups = loadFromLocalStorage();
+        let updated = false;
+        
+        switch (eventType) {
+            case 'INSERT':
+                // New group where user is a member
+                if (newRecord && newRecord.members?.includes(window.currentUser.id)) {
+                    const existingIndex = localGroups.findIndex(g => g.id === newRecord.id);
+                    if (existingIndex === -1) {
+                        const newGroup = transformDbGroupToLocal(newRecord);
+                        localGroups.push(newGroup);
+                        updated = true;
+                        showNotification(`Added to new group: ${newRecord.name}`, 'info');
+                    }
+                }
+                break;
+                
+            case 'UPDATE':
+                // Group updated
+                const groupIndex = localGroups.findIndex(g => g.id === newRecord.id);
+                if (groupIndex !== -1) {
+                    localGroups[groupIndex] = transformDbGroupToLocal(newRecord);
+                    updated = true;
+                    showNotification(`Group "${newRecord.name}" updated`, 'info');
+                }
+                break;
+                
+            case 'DELETE':
+                // Group deleted
+                if (oldRecord) {
+                    const deleteIndex = localGroups.findIndex(g => g.id === oldRecord.id);
+                    if (deleteIndex !== -1) {
+                        localGroups.splice(deleteIndex, 1);
+                        updated = true;
+                        showNotification(`Group "${oldRecord.name}" was deleted`, 'warning');
+                    }
+                }
+                break;
+        }
+        
+        if (updated) {
+            // Update localStorage
+            localStorage.setItem('spliteasy_groups', JSON.stringify(localGroups));
+            window.groups = localGroups;
+            
+            // Refresh UI if on main page
+            if (typeof displayGroups === 'function') {
+                displayGroups();
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error handling group change:', error);
+    }
+}
+
+// Handle real-time expense changes
+async function handleExpenseChange(payload) {
+    console.log('💰 Real-time expense change:', payload);
+    
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+    
+    try {
+        // Don't process changes made by current user
+        if (newRecord?.created_by === window.currentUser?.id) {
+            return;
+        }
+        
+        let localGroups = loadFromLocalStorage();
+        let updated = false;
+        
+        const targetGroupId = newRecord?.group_id || oldRecord?.group_id;
+        const groupIndex = localGroups.findIndex(g => g.id === targetGroupId);
+        
+        if (groupIndex === -1) return; // Not user's group
+        
+        switch (eventType) {
+            case 'INSERT':
+                // New expense added
+                if (newRecord) {
+                    const newExpense = transformDbExpenseToLocal(newRecord);
+                    localGroups[groupIndex].expenses.push(newExpense);
+                    updated = true;
+                    showNotification(`New expense: ${newRecord.description}`, 'info');
+                }
+                break;
+                
+            case 'UPDATE':
+                // Expense updated
+                const expenseIndex = localGroups[groupIndex].expenses.findIndex(e => e.id === newRecord.id);
+                if (expenseIndex !== -1) {
+                    localGroups[groupIndex].expenses[expenseIndex] = transformDbExpenseToLocal(newRecord);
+                    updated = true;
+                    showNotification(`Expense "${newRecord.description}" updated`, 'info');
+                }
+                break;
+                
+            case 'DELETE':
+                // Expense deleted
+                if (oldRecord) {
+                    const deleteIndex = localGroups[groupIndex].expenses.findIndex(e => e.id === oldRecord.id);
+                    if (deleteIndex !== -1) {
+                        localGroups[groupIndex].expenses.splice(deleteIndex, 1);
+                        updated = true;
+                        showNotification(`Expense "${oldRecord.description}" deleted`, 'info');
+                    }
+                }
+                break;
+        }
+        
+        if (updated) {
+            // Recalculate group totals
+            localGroups[groupIndex].totalExpenses = localGroups[groupIndex].expenses
+                .reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+            
+            // Update localStorage
+            localStorage.setItem('spliteasy_groups', JSON.stringify(localGroups));
+            window.groups = localGroups;
+            
+            // Refresh UI if on group detail page
+            if (window.currentGroup && window.currentGroup.id === targetGroupId) {
+                window.currentGroup = localGroups[groupIndex];
+                if (typeof displayExpenses === 'function') {
+                    displayExpenses();
+                    calculateBalances();
+                    updateGroupDisplay();
+                }
+            }
+            
+            // Refresh UI if on main page
+            if (typeof displayGroups === 'function') {
+                displayGroups();
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error handling expense change:', error);
+    }
+}
+
+// Handle real-time user changes
+async function handleUserChange(payload) {
+    console.log('👤 Real-time user change:', payload);
+    
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+    
+    // Handle user deletion
+    if (eventType === 'DELETE' && oldRecord?.id === window.currentUser?.id) {
+        showNotification('Your account was deleted from another device', 'error');
+        setTimeout(() => {
+            localStorage.clear();
+            window.location.reload();
+        }, 3000);
+    }
+}
+
+// Transform database records to local format
+function transformDbGroupToLocal(dbGroup) {
+    return {
+        id: dbGroup.id,
+        name: dbGroup.name,
+        members: dbGroup.members || [],
+        createdBy: dbGroup.created_by,
+        createdAt: dbGroup.created_at,
+        totalExpenses: dbGroup.total_expenses || 0,
+        expenses: [] // Will be loaded separately
+    };
+}
+
+function transformDbExpenseToLocal(dbExpense) {
+    return {
+        id: dbExpense.id,
+        name: dbExpense.description,
+        amount: dbExpense.amount,
+        paidBy: dbExpense.paid_by,
+        splitBetween: dbExpense.split_between || [],
+        date: dbExpense.created_at,
+        perPersonAmount: dbExpense.per_person_amount || 0
+    };
+}
+
+// Cleanup subscriptions
+function cleanupRealtimeSubscriptions() {
+    if (window.splitEasyRealtime.subscriptions.length > 0) {
+        console.log('🧹 Cleaning up existing subscriptions');
+        window.splitEasyRealtime.subscriptions.forEach(subscription => {
+            window.supabaseClient.removeChannel(subscription);
+        });
+        window.splitEasyRealtime.subscriptions = [];
+    }
+}
+
+// Initialize real-time when user logs in
+function startRealtimeSync() {
+    if (window.currentUser && window.supabaseClient) {
+        initializeRealTimeSync();
+    }
+}
+
+// Stop real-time when user logs out
+function stopRealtimeSync() {
+    cleanupRealtimeSubscriptions();
+    window.splitEasyRealtime.isSubscribed = false;
+    console.log('🛑 Real-time sync stopped');
+}
+
+// Make functions globally available
+window.initializeRealTimeSync = initializeRealTimeSync;
+window.startRealtimeSync = startRealtimeSync;
+window.stopRealtimeSync = stopRealtimeSync;
+
+
+// Make functions globally available
+window.fetchGroupFromDatabase = fetchGroupFromDatabase;
+window.joinUserToGroup = joinUserToGroup;
 window.checkUserIdExists = checkUserIdExists;
 window.createUserInDatabase = createUserInDatabase;
 window.getUserFromDatabase = getUserFromDatabase;

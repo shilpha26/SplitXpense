@@ -234,35 +234,147 @@
 
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            currentGroupId = urlParams.get('id');
-
-            if (currentGroupId) {
-                loadGroupData(currentGroupId);
-            } else {
-                showNotification('No group ID provided', 'error');
-                setTimeout(() => window.location.href = 'index.html', 2000);
-            }
-        });
-
-        function loadGroupData(groupId) {
-            const groups = loadFromLocalStorage();
-            currentGroup = groups.find(g => g.id === groupId);
-
-            if (!currentGroup) {
-                showNotification('Group not found', 'error');
-                setTimeout(() => window.location.href = 'index.html', 2000);
-                return;
-            }
-
-            // Update UI
-            safeUpdateElement('groupName', currentGroup.name);
-            safeUpdateElement('groupMeta', `${currentGroup.members.length} members • ${currentGroup.expenses?.length || 0} expenses • Created ${formatDate(currentGroup.createdAt)}`);
-            safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses || 0));
-
-            displayExpenses();
-            calculateBalances();
+    // CRITICAL: Initialize user session first
+    const userData = localStorage.getItem('spliteasy_current_user');
+    if (userData) {
+        try {
+            window.currentUser = JSON.parse(userData);
+            console.log('👤 User session restored for group detail:', window.currentUser.name);
+        } catch (error) {
+            console.error('Failed to parse user data:', error);
+            // Don't redirect immediately - might be a shared link
         }
+    }
+    
+    // Get group ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const groupId = urlParams.get('id');
+    
+    if (groupId) {
+        window.currentGroupId = groupId;
+        loadGroupData(groupId);
+    } else {
+        showNotification('No group ID provided', 'error');
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 2000);
+    }
+
+     if (window.currentUser && typeof window.startRealtimeSync === 'function') {
+        setTimeout(() => {
+            window.startRealtimeSync();
+        }, 2000); // Give time for group to load
+    }
+});
+
+
+        // FIXED: Enhanced loadGroupData with share link support
+async function loadGroupData(groupId) {
+    console.log('🔍 Loading group data for ID:', groupId);
+    
+    // First try to load from localStorage
+    const groups = loadFromLocalStorage();
+    let currentGroup = groups.find(g => g.id === groupId);
+    
+    if (currentGroup) {
+        console.log('✅ Group found in localStorage');
+        // Group exists locally, proceed normally
+        window.currentGroup = currentGroup;
+        updateGroupDisplay();
+        return;
+    }
+    
+    // Group not found locally - try to fetch from database
+    console.log('🔄 Group not found locally, checking database...');
+    showNotification('Loading group from link...', 'info');
+    
+    if (!window.currentUser) {
+        showNotification('Please log in to join this group', 'error');
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 2000);
+        return;
+    }
+    
+    try {
+        // Fetch group from database
+        if (typeof window.fetchGroupFromDatabase !== 'function') {
+            throw new Error('Database functions not available');
+        }
+        
+        const fetchedGroup = await window.fetchGroupFromDatabase(groupId);
+        
+        if (!fetchedGroup) {
+            showNotification('Group not found or access denied', 'error');
+            setTimeout(() => {
+                window.location.href = 'index.html';
+            }, 2000);
+            return;
+        }
+        
+        // Ask user if they want to join the group
+        const joinConfirm = confirm(
+            `Do you want to join the group "${fetchedGroup.name}"?\n\n` +
+            `Members: ${fetchedGroup.members.join(', ')}\n` +
+            `Expenses: ${fetchedGroup.expenses.length}\n` +
+            `Total: ${formatCurrency(fetchedGroup.totalExpenses)}`
+        );
+        
+        if (!joinConfirm) {
+            showNotification('Group join cancelled', 'info');
+            setTimeout(() => {
+                window.location.href = 'index.html';
+            }, 1500);
+            return;
+        }
+        
+        // Join user to group in database
+        const joined = await window.joinUserToGroup(groupId, window.currentUser.id);
+        
+        if (!joined) {
+            showNotification('Failed to join group. Please try again.', 'error');
+            return;
+        }
+        
+        // Add user to local group data
+        if (!fetchedGroup.members.includes(window.currentUser.id)) {
+            fetchedGroup.members.push(window.currentUser.id);
+        }
+        
+        // Save group locally
+        const localGroups = loadFromLocalStorage();
+        localGroups.push(fetchedGroup);
+        localStorage.setItem('spliteasy_groups', JSON.stringify(localGroups));
+        
+        // Set as current group
+        window.currentGroup = fetchedGroup;
+        updateGroupDisplay();
+        
+        showNotification(`Successfully joined "${fetchedGroup.name}"!`, 'success');
+        
+    } catch (error) {
+        console.error('Failed to load group from share link:', error);
+        showNotification('Failed to load group. Please check your connection.', 'error');
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 2000);
+    }
+}
+
+// Helper function to update group display
+function updateGroupDisplay() {
+    if (!window.currentGroup) return;
+    
+    safeUpdateElement('groupName', window.currentGroup.name);
+    safeUpdateElement('groupMeta', 
+        `${window.currentGroup.members.length} members • ${window.currentGroup.expenses?.length || 0} expenses • Created ${formatDate(window.currentGroup.createdAt)}`
+    );
+    safeUpdateElement('totalExpensesAmount', formatCurrency(window.currentGroup.totalExpenses || 0));
+    
+    displayExpenses();
+    calculateBalances();
+}
+
 
         function safeUpdateElement(id, content) {
             const element = document.getElementById(id);
