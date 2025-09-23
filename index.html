@@ -22,7 +22,7 @@
                 </div>
                 <div class="user-info">
                     <span id="currentUserName">Loading...</span>
-                    <button class="btn-link" onclick="showUserLoginModal()">Change User</button>
+                    <button class="btn-link" onclick="showChangeUserModal()">Change User</button>
                 </div>
             </div>
         </header>
@@ -63,7 +63,7 @@
                     <label for="groupName">Group Name</label>
                     <input type="text" id="groupName" placeholder="e.g., Weekend Trip, House Expenses" required>
                 </div>
-
+                
                 <div class="form-group">
                     <label>Group Members</label>
                     <div class="selection-container">
@@ -74,22 +74,22 @@
                                 <button class="selection-action" onclick="clearAllMembers()">Clear All</button>
                             </div>
                         </div>
-
                         <div class="selectable-grid" id="memberSelectionGrid">
                             <!-- Current user will be added here -->
                         </div>
-
+                        
                         <div class="add-item-section">
                             <input type="text" class="add-item-input" id="newMemberInput" placeholder="Add new member">
                             <button class="btn-add" onclick="addNewMember()" title="Add member">+</button>
                         </div>
-
+                        
                         <div class="dynamic-items" id="dynamicMembers">
                             <!-- Dynamically added members will appear here -->
                         </div>
                     </div>
                 </div>
             </div>
+            
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeCreateGroupModal()">Cancel</button>
                 <button type="button" class="btn-success" onclick="createGroup()">Create Group</button>
@@ -109,7 +109,7 @@
                     <label for="editGroupName">Group Name</label>
                     <input type="text" id="editGroupName" required>
                 </div>
-
+                
                 <div class="form-group">
                     <label>Group Members</label>
                     <div class="selection-container">
@@ -120,22 +120,22 @@
                                 <button class="selection-action" onclick="clearAllEditMembers()">Clear All</button>
                             </div>
                         </div>
-
                         <div class="selectable-grid" id="editMemberSelectionGrid">
                             <!-- Members will be loaded here -->
                         </div>
-
+                        
                         <div class="add-item-section">
                             <input type="text" class="add-item-input" id="editNewMemberInput" placeholder="Add new member">
                             <button class="btn-add" onclick="addNewEditMember()" title="Add member">+</button>
                         </div>
-
+                        
                         <div class="dynamic-items" id="editDynamicMembers">
                             <!-- Dynamically added members will appear here -->
                         </div>
                     </div>
                 </div>
             </div>
+            
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeEditGroupModal()">Cancel</button>
                 <button type="button" class="btn-success" onclick="saveGroupChanges()">Save Changes</button>
@@ -150,19 +150,39 @@
                 <h3>Welcome to SplitEasy</h3>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label for="userName">Your Name</label>
-                    <input type="text" id="userName" placeholder="Enter your name" required>
+                <!-- Previous Users Section -->
+                <div id="previousUsersSection" class="previous-users-section" style="display: none;">
+                    <div class="section-header">
+                        <h4>Previous Users</h4>
+                        <button type="button" class="btn-link" onclick="showNewUserForm()">Add New User</button>
+                    </div>
+                    <div id="previousUsersList" class="previous-users-list">
+                        <!-- Previous users will be loaded here -->
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="userIdInput">User ID (Optional)</label>
-                    <input type="text" id="userIdInput" placeholder="Leave blank to generate automatically">
-                    <div class="form-help" id="userIdStatus">Will be generated from your name</div>
+                
+                <!-- New User Form -->
+                <div id="newUserForm" class="new-user-form">
+                    <div class="form-group">
+                        <label for="userName">Your Name</label>
+                        <input type="text" id="userName" placeholder="Enter your name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="userIdInput">User ID</label>
+                        <div class="input-with-status">
+                            <input type="text" id="userIdInput" placeholder="Enter desired User ID" required>
+                            <button type="button" class="btn-check" onclick="checkUserIdAvailability()" disabled>Check</button>
+                        </div>
+                        <div class="form-help" id="userIdStatus">Enter a unique User ID</div>
+                        <div class="form-help-text">User ID must be 3-20 characters, letters and numbers only</div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn-link" onclick="handleGenerateUserId()">Generate User ID</button>
-                <button type="button" class="btn-success" onclick="createUser()">Continue</button>
+                <div id="newUserActions">
+                    <button type="button" class="btn-link" onclick="handleGenerateUserId()">Generate User ID</button>
+                    <button type="button" class="btn-success" onclick="createUser()" id="continueBtn" disabled>Continue</button>
+                </div>
             </div>
         </div>
     </div>
@@ -172,52 +192,255 @@
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
     <script>
-        // Global variables
+        // ========================================
+        // GLOBAL VARIABLES
+        // ========================================
         window.groups = [];
         window.currentUser = null;
         let dynamicMemberCounter = 0;
         let editingGroupId = null;
 
-        // Initialize app
+        // Enhanced User Authentication Variables
+        let userIdCheckTimeout = null;
+        let isUserIdAvailable = false;
+
+        // ========================================
+        // INITIALIZATION
+        // ========================================
         document.addEventListener('DOMContentLoaded', initializeApp);
 
         async function initializeApp() {
             console.log('🚀 Initializing SplitEasy...');
-
+            
+            // Initialize Supabase if available
+            if (typeof window.supabase !== 'undefined') {
+                try {
+                    if (typeof window.initializeSupabase === 'function') {
+                        window.initializeSupabase();
+                    }
+                } catch (error) {
+                    console.warn('Supabase initialization failed:', error);
+                }
+            }
+            
             // Check for existing user
             const userData = localStorage.getItem('spliteasy_current_user');
+            const previousUsers = getPreviousUsers();
+            
             if (userData) {
                 window.currentUser = JSON.parse(userData);
                 document.getElementById('currentUserName').textContent = window.currentUser.name;
                 loadGroups();
                 showMainContent();
+            } else if (previousUsers.length > 0) {
+                showUserLoginModal(true); // Show with previous users
             } else {
-                showUserLoginModal();
+                showUserLoginModal(false); // Show new user form
             }
         }
 
-        function showUserLoginModal() {
-            document.getElementById('userLoginModal').style.display = 'block';
+        // ========================================
+        // USER AUTHENTICATION FUNCTIONS
+        // ========================================
+
+        // Enhanced User Login Modal
+        function showUserLoginModal(hasPreviousUsers = false) {
+            const modal = document.getElementById('userLoginModal');
+            const previousSection = document.getElementById('previousUsersSection');
+            const newUserForm = document.getElementById('newUserForm');
+            
+            if (hasPreviousUsers) {
+                loadPreviousUsers();
+                previousSection.style.display = 'block';
+                newUserForm.style.display = 'none';
+            } else {
+                previousSection.style.display = 'none';
+                newUserForm.style.display = 'block';
+                setupUserIdInput();
+            }
+            
+            modal.style.display = 'block';
         }
 
-        function showMainContent() {
-            document.getElementById('userLoginModal').style.display = 'none';
-            document.getElementById('mainAppContent').style.display = 'block';
+        // Show change user modal (called from Change User button)
+        function showChangeUserModal() {
+            const previousUsers = getPreviousUsers();
+            showUserLoginModal(previousUsers.length > 0);
         }
 
-        // In index.html, replace the existing generateUserId function:
+        // Setup User ID input validation
+        function setupUserIdInput() {
+            const userIdInput = document.getElementById('userIdInput');
+            const checkBtn = document.querySelector('.btn-check');
+            const continueBtn = document.getElementById('continueBtn');
+            const userNameInput = document.getElementById('userName');
+            
+            if (!userIdInput || !checkBtn || !continueBtn || !userNameInput) return;
+            
+            // User ID input validation
+            userIdInput.addEventListener('input', function() {
+                const userId = this.value.trim();
+                
+                // Reset status
+                resetUserIdStatus();
+                isUserIdAvailable = false;
+                updateContinueButton();
+                
+                if (userId.length >= 3 && isValidUserId(userId)) {
+                    checkBtn.disabled = false;
+                    
+                    // Clear previous timeout
+                    clearTimeout(userIdCheckTimeout);
+                    
+                    // Auto-check after 1 second of typing
+                    userIdCheckTimeout = setTimeout(() => {
+                        checkUserIdAvailability();
+                    }, 1000);
+                } else {
+                    checkBtn.disabled = true;
+                    if (userId.length > 0) {
+                        setUserIdStatus('Invalid User ID format', 'error');
+                    }
+                }
+            });
+
+            // User name input validation
+            userNameInput.addEventListener('input', function() {
+                updateContinueButton();
+            });
+        }
+
+        // Update continue button state
+        function updateContinueButton() {
+            const continueBtn = document.getElementById('continueBtn');
+            const userName = document.getElementById('userName')?.value?.trim();
+            const userId = document.getElementById('userIdInput')?.value?.trim();
+            
+            if (continueBtn && userName && userId && isUserIdAvailable) {
+                continueBtn.disabled = false;
+            } else if (continueBtn) {
+                continueBtn.disabled = true;
+            }
+        }
+
+        // Validate User ID format
+        function isValidUserId(userId) {
+            const regex = /^[a-zA-Z0-9]{3,20}$/;
+            return regex.test(userId);
+        }
+
+        // Check User ID availability
+        async function checkUserIdAvailability() {
+            const userIdInput = document.getElementById('userIdInput');
+            const userId = userIdInput?.value?.trim();
+            const checkBtn = document.querySelector('.btn-check');
+            
+            if (!userId || !isValidUserId(userId)) {
+                setUserIdStatus('Invalid User ID format', 'error');
+                return;
+            }
+            
+            // Show checking status
+            setUserIdStatus('Checking availability...', 'checking');
+            if (checkBtn) {
+                checkBtn.disabled = true;
+                checkBtn.textContent = '...';
+            }
+            
+            try {
+                // Check against previous local users first
+                const previousUsers = getPreviousUsers();
+                const localExists = previousUsers.some(user => user.id.toLowerCase() === userId.toLowerCase());
+                
+                if (localExists) {
+                    setUserIdStatus('User ID is unavailable', 'error');
+                    isUserIdAvailable = false;
+                    updateContinueButton();
+                    return;
+                }
+                
+                // Check against database if available
+                if (typeof window.checkUserIdExists === 'function' && window.supabaseClient) {
+                    const exists = await window.checkUserIdExists(userId);
+                    
+                    if (exists) {
+                        setUserIdStatus('User ID is unavailable', 'error');
+                        isUserIdAvailable = false;
+                    } else {
+                        setUserIdStatus('User ID is available', 'success');
+                        isUserIdAvailable = true;
+                    }
+                } else {
+                    // Offline mode - assume available
+                    setUserIdStatus('User ID is available (offline mode)', 'success');
+                    isUserIdAvailable = true;
+                }
+                
+                updateContinueButton();
+                
+            } catch (error) {
+                console.error('User ID check failed:', error);
+                setUserIdStatus('Unable to verify availability (offline mode)', 'warning');
+                isUserIdAvailable = true; // Allow in offline mode
+                updateContinueButton();
+            } finally {
+                if (checkBtn) {
+                    checkBtn.disabled = false;
+                    checkBtn.textContent = 'Check';
+                }
+            }
+        }
+
+        // Set User ID status
+        function setUserIdStatus(message, type) {
+            const statusEl = document.getElementById('userIdStatus');
+            if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.className = `form-help ${type}`;
+            }
+        }
+
+        // Reset User ID status
+        function resetUserIdStatus() {
+            setUserIdStatus('Enter a unique User ID', '');
+        }
+
+        // Enhanced Generate User ID
         function handleGenerateUserId() {
-            const userName = document.getElementById('userName').value;
-            if (userName) {
-                const userId = generateUserId(userName); // Now calls shared-utils function
-                document.getElementById('userIdInput').value = userId;
-                document.getElementById('userIdStatus').textContent = `Generated: ${userId}`;
-                document.getElementById('userIdStatus').className = 'form-help success';
+            const userName = document.getElementById('userName')?.value?.trim();
+            if (!userName) {
+                showNotification('Please enter your name first', 'error');
+                return;
+            }
+            
+            let userId = generateUniqueUserId(userName);
+            const userIdInput = document.getElementById('userIdInput');
+            if (userIdInput) {
+                userIdInput.value = userId;
+                // Trigger availability check
+                checkUserIdAvailability();
             }
         }
 
+        // Generate unique User ID
+        function generateUniqueUserId(name) {
+            const previousUsers = getPreviousUsers();
+            const baseId = generateUserIdFromName(name);
+            let userId = baseId;
+            let counter = 1;
+            
+            // Ensure uniqueness against local users
+            while (previousUsers.some(user => user.id.toLowerCase() === userId.toLowerCase())) {
+                userId = baseId + counter;
+                counter++;
+            }
+            
+            return userId;
+        }
 
+        // Generate User ID from name
         function generateUserIdFromName(name) {
             const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
             const timestamp = Date.now().toString().slice(-4);
@@ -225,27 +448,186 @@
             return (clean || 'user') + timestamp + random;
         }
 
+        // Enhanced Create User
         async function createUser() {
-            const userName = document.getElementById('userName').value.trim();
-            const userId = document.getElementById('userIdInput').value.trim() || generateUserIdFromName(userName);
-
+            const userName = document.getElementById('userName')?.value?.trim();
+            const userId = document.getElementById('userIdInput')?.value?.trim() || generateUserIdFromName(userName || 'user');
+            
             if (!userName) {
                 showNotification('Please enter your name', 'error');
                 return;
             }
-
+            
+            if (!userId || !isValidUserId(userId)) {
+                showNotification('Please enter a valid User ID', 'error');
+                return;
+            }
+            
+            // Create user data
             const userData = {
                 id: userId,
                 name: userName,
                 createdAt: new Date().toISOString()
             };
+            
+            try {
+                // Try to create user in database if available
+                if (typeof window.createUserInDatabase === 'function' && window.supabaseClient) {
+                    await window.createUserInDatabase(userId, userName);
+                }
+                
+                // Store user data
+                localStorage.setItem('spliteasy_current_user', JSON.stringify(userData));
+                storePreviousUser(userData);
+                
+                window.currentUser = userData;
+                document.getElementById('currentUserName').textContent = userName;
+                
+                showMainContent();
+                loadGroups();
+                showNotification(`Welcome, ${userName}!`);
+                
+            } catch (error) {
+                console.error('User creation failed:', error);
+                showNotification('Failed to create user. Please try again.', 'error');
+            }
+        }
 
-            localStorage.setItem('spliteasy_current_user', JSON.stringify(userData));
-            window.currentUser = userData;
-            document.getElementById('currentUserName').textContent = userName;
+        // ========================================
+        // PREVIOUS USERS MANAGEMENT
+        // ========================================
+
+        function getPreviousUsers() {
+            try {
+                const data = localStorage.getItem('spliteasy_previous_users');
+                return data ? JSON.parse(data) : [];
+            } catch (error) {
+                console.error('Error loading previous users:', error);
+                return [];
+            }
+        }
+
+        function storePreviousUser(userData) {
+            try {
+                let previousUsers = getPreviousUsers();
+                
+                // Remove if already exists (to avoid duplicates)
+                previousUsers = previousUsers.filter(user => user.id !== userData.id);
+                
+                // Add to beginning of array
+                previousUsers.unshift({
+                    id: userData.id,
+                    name: userData.name,
+                    lastUsed: new Date().toISOString()
+                });
+                
+                // Keep only last 10 users
+                previousUsers = previousUsers.slice(0, 10);
+                
+                localStorage.setItem('spliteasy_previous_users', JSON.stringify(previousUsers));
+            } catch (error) {
+                console.error('Error storing previous user:', error);
+            }
+        }
+
+        function loadPreviousUsers() {
+            const previousUsers = getPreviousUsers();
+            const container = document.getElementById('previousUsersList');
+            
+            if (!container) return;
+            
+            if (previousUsers.length === 0) {
+                container.innerHTML = '<p class="no-users">No previous users found</p>';
+                return;
+            }
+            
+            container.innerHTML = previousUsers.map(user => `
+                <div class="previous-user-item" onclick="switchToUser('${user.id}')">
+                    <div class="user-info">
+                        <div class="user-name">${escapeHtml(user.name)}</div>
+                        <div class="user-id">ID: ${escapeHtml(user.id)}</div>
+                        <div class="last-used">Last used: ${formatRelativeTime(user.lastUsed)}</div>
+                    </div>
+                    <button class="btn-remove" onclick="removePreviousUser('${user.id}', event)" title="Remove">×</button>
+                </div>
+            `).join('');
+        }
+
+        // Switch to previous user
+        async function switchToUser(userId) {
+            const previousUsers = getPreviousUsers();
+            const userData = previousUsers.find(user => user.id === userId);
+            
+            if (!userData) {
+                showNotification('User not found', 'error');
+                return;
+            }
+            
+            // Create full user data
+            const fullUserData = {
+                id: userData.id,
+                name: userData.name,
+                createdAt: userData.createdAt || new Date().toISOString()
+            };
+            
+            // Store as current user
+            localStorage.setItem('spliteasy_current_user', JSON.stringify(fullUserData));
+            storePreviousUser(fullUserData); // Update last used time
+            
+            window.currentUser = fullUserData;
+            document.getElementById('currentUserName').textContent = userData.name;
+            
             showMainContent();
             loadGroups();
-            showNotification(`Welcome, ${userName}!`);
+            showNotification(`Switched to ${userData.name}`);
+        }
+
+        // Remove previous user
+        function removePreviousUser(userId, event) {
+            event.stopPropagation(); // Prevent switching to user
+            
+            if (confirm('Remove this user from the list?')) {
+                let previousUsers = getPreviousUsers();
+                previousUsers = previousUsers.filter(user => user.id !== userId);
+                localStorage.setItem('spliteasy_previous_users', JSON.stringify(previousUsers));
+                
+                loadPreviousUsers();
+                showNotification('User removed from list');
+            }
+        }
+
+        // Show new user form
+        function showNewUserForm() {
+            const previousSection = document.getElementById('previousUsersSection');
+            const newUserForm = document.getElementById('newUserForm');
+            
+            if (previousSection) previousSection.style.display = 'none';
+            if (newUserForm) newUserForm.style.display = 'block';
+            
+            // Clear form
+            const userName = document.getElementById('userName');
+            const userIdInput = document.getElementById('userIdInput');
+            const continueBtn = document.getElementById('continueBtn');
+            
+            if (userName) userName.value = '';
+            if (userIdInput) userIdInput.value = '';
+            if (continueBtn) continueBtn.disabled = true;
+            
+            resetUserIdStatus();
+            isUserIdAvailable = false;
+            setupUserIdInput();
+        }
+
+        // ========================================
+        // MAIN APP FUNCTIONS
+        // ========================================
+
+        function showMainContent() {
+            const loginModal = document.getElementById('userLoginModal');
+            const mainContent = document.getElementById('mainAppContent');
+            
+            if (loginModal) loginModal.style.display = 'none';
+            if (mainContent) mainContent.style.display = 'block';
         }
 
         function loadGroups() {
@@ -265,6 +647,7 @@
 
         function saveToLocalStorage() {
             try {
+                // Calculate totals for each group
                 window.groups.forEach(group => {
                     if (group.expenses && group.expenses.length > 0) {
                         group.totalExpenses = group.expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
@@ -272,11 +655,11 @@
                         group.totalExpenses = 0;
                     }
                 });
-
+                
                 localStorage.setItem('spliteasy_groups', JSON.stringify(window.groups));
-                console.log('💾 Data saved to localStorage');
+                console.log('Data saved to localStorage');
             } catch (error) {
-                console.error('❌ Failed to save to localStorage:', error);
+                console.error('Failed to save to localStorage:', error);
             }
         }
 
@@ -284,33 +667,31 @@
             const groupsList = document.getElementById('groupsList');
             const emptyState = document.getElementById('emptyState');
             const groupCount = document.getElementById('groupCount');
-
+            
+            if (!groupsList || !emptyState || !groupCount) return;
+            
             if (window.groups.length === 0) {
                 groupsList.style.display = 'none';
                 emptyState.style.display = 'block';
                 groupCount.textContent = '0 groups';
                 return;
             }
-
+            
             groupsList.style.display = 'grid';
             emptyState.style.display = 'none';
             groupCount.textContent = `${window.groups.length} group${window.groups.length !== 1 ? 's' : ''}`;
-
+            
             groupsList.innerHTML = window.groups.map(group => `
                 <div class="group-card">
                     <div class="group-card-header">
                         <div class="group-card-actions">
-                            <button class="group-action-btn edit" onclick="editGroup('${group.id}')" title="Edit Group">
-                                ✏️
-                            </button>
-                            <button class="group-action-btn delete" onclick="deleteGroup('${group.id}')" title="Delete Group">
-                                🗑️
-                            </button>
+                            <button class="group-action-btn edit" onclick="editGroup('${group.id}')" title="Edit Group">✏</button>
+                            <button class="group-action-btn delete" onclick="deleteGroup('${group.id}')" title="Delete Group">🗑</button>
                         </div>
                     </div>
                     <div class="group-card-content" onclick="openGroup('${group.id}')">
                         <div class="group-info">
-                            <h3>${group.name}</h3>
+                            <h3>${escapeHtml(group.name)}</h3>
                             <div class="group-meta">
                                 <span>${group.members.length} members</span>
                                 <span>${group.expenses?.length || 0} expenses</span>
@@ -325,26 +706,39 @@
             `).join('');
         }
 
+        // ========================================
+        // GROUP MANAGEMENT FUNCTIONS
+        // ========================================
+
         function showCreateGroupModal() {
-            document.getElementById('createGroupModal').style.display = 'block';
-            document.getElementById('groupName').value = '';
+            const modal = document.getElementById('createGroupModal');
+            const groupNameInput = document.getElementById('groupName');
+            
+            if (modal) modal.style.display = 'block';
+            if (groupNameInput) groupNameInput.value = '';
+            
             setupMemberSelection();
         }
 
         function closeCreateGroupModal() {
-            document.getElementById('createGroupModal').style.display = 'none';
-            // Clear dynamic members
-            document.getElementById('dynamicMembers').innerHTML = '';
+            const modal = document.getElementById('createGroupModal');
+            const dynamicMembers = document.getElementById('dynamicMembers');
+            
+            if (modal) modal.style.display = 'none';
+            if (dynamicMembers) dynamicMembers.innerHTML = '';
+            
             dynamicMemberCounter = 0;
         }
 
         function setupMemberSelection() {
             const grid = document.getElementById('memberSelectionGrid');
-            grid.innerHTML = `
-                <div class="selectable-box selected" data-member="${window.currentUser.name}">
-                    ${window.currentUser.name}
-                </div>
-            `;
+            if (grid && window.currentUser) {
+                grid.innerHTML = `
+                    <div class="selectable-box selected" data-member="${escapeHtml(window.currentUser.name)}">
+                        ${escapeHtml(window.currentUser.name)}
+                    </div>
+                `;
+            }
         }
 
         function selectAllMembers() {
@@ -355,7 +749,7 @@
 
         function clearAllMembers() {
             document.querySelectorAll('#memberSelectionGrid .selectable-box').forEach(box => {
-                if (box.dataset.member !== window.currentUser.name) {
+                if (box.dataset.member !== window.currentUser?.name) {
                     box.classList.remove('selected');
                 }
             });
@@ -363,81 +757,89 @@
 
         function addNewMember() {
             const input = document.getElementById('newMemberInput');
-            const memberName = input.value.trim();
-
+            const memberName = input?.value?.trim();
+            
             if (!memberName) return;
-
+            
             // Check for duplicates
             const existingMembers = Array.from(document.querySelectorAll('#memberSelectionGrid .selectable-box')).map(box => box.dataset.member);
             const dynamicMembers = Array.from(document.querySelectorAll('#dynamicMembers .dynamic-item-name')).map(el => el.textContent);
-
+            
             if (existingMembers.includes(memberName) || dynamicMembers.includes(memberName)) {
                 showNotification('Member already exists', 'error');
                 return;
             }
-
+            
             const dynamicContainer = document.getElementById('dynamicMembers');
-            const itemId = 'member_' + (++dynamicMemberCounter);
-
-            const memberItem = document.createElement('div');
-            memberItem.className = 'dynamic-item';
-            memberItem.id = itemId;
-            memberItem.innerHTML = `
-                <div class="dynamic-item-content">
-                    <span class="dynamic-item-name">${memberName}</span>
-                </div>
-                <div class="dynamic-item-actions">
-                    <button class="icon-btn edit" onclick="editMember('${itemId}')" title="Edit">✏️</button>
-                    <button class="icon-btn delete" onclick="removeMember('${itemId}')" title="Remove">✖️</button>
-                </div>
-            `;
-
-            dynamicContainer.appendChild(memberItem);
-            input.value = '';
-            showNotification('Member added successfully');
+            const itemId = `member_${++dynamicMemberCounter}`;
+            
+            if (dynamicContainer) {
+                const memberItem = document.createElement('div');
+                memberItem.className = 'dynamic-item';
+                memberItem.id = itemId;
+                memberItem.innerHTML = `
+                    <div class="dynamic-item-content">
+                        <span class="dynamic-item-name">${escapeHtml(memberName)}</span>
+                    </div>
+                    <div class="dynamic-item-actions">
+                        <button class="icon-btn edit" onclick="editMember('${itemId}')" title="Edit">✏</button>
+                        <button class="icon-btn delete" onclick="removeMember('${itemId}')" title="Remove">🗑</button>
+                    </div>
+                `;
+                
+                dynamicContainer.appendChild(memberItem);
+                input.value = '';
+                showNotification('Member added successfully');
+            }
         }
 
         function editMember(itemId) {
             const item = document.getElementById(itemId);
-            const nameEl = item.querySelector('.dynamic-item-name');
-            const currentName = nameEl.textContent;
-
-            const newName = prompt('Edit member name:', currentName);
-            if (newName && newName.trim() && newName.trim() !== currentName) {
-                nameEl.textContent = newName.trim();
-                showNotification('Member updated');
+            const nameEl = item?.querySelector('.dynamic-item-name');
+            const currentName = nameEl?.textContent;
+            
+            if (currentName) {
+                const newName = prompt('Edit member name:', currentName);
+                if (newName && newName.trim() && newName.trim() !== currentName) {
+                    nameEl.textContent = newName.trim();
+                    showNotification('Member updated');
+                }
             }
         }
 
         function removeMember(itemId) {
             if (confirm('Remove this member?')) {
-                document.getElementById(itemId).remove();
-                showNotification('Member removed');
+                const item = document.getElementById(itemId);
+                if (item) {
+                    item.remove();
+                    showNotification('Member removed');
+                }
             }
         }
 
         function createGroup() {
-            const groupName = document.getElementById('groupName').value.trim();
-
+            const groupNameInput = document.getElementById('groupName');
+            const groupName = groupNameInput?.value?.trim();
+            
             // Get selected members from boxes
             const selectedBoxes = document.querySelectorAll('#memberSelectionGrid .selectable-box.selected');
             const selectedMembers = Array.from(selectedBoxes).map(box => box.dataset.member);
-
+            
             // Get dynamic members
             const dynamicMembers = Array.from(document.querySelectorAll('#dynamicMembers .dynamic-item-name')).map(el => el.textContent);
-
+            
             const allMembers = [...selectedMembers, ...dynamicMembers];
-
+            
             if (!groupName) {
                 showNotification('Please enter a group name', 'error');
                 return;
             }
-
+            
             if (allMembers.length < 2) {
                 showNotification('Group must have at least two members', 'error');
                 return;
             }
-
+            
             const newGroup = {
                 id: generateId(),
                 name: groupName,
@@ -445,9 +847,9 @@
                 expenses: [],
                 totalExpenses: 0,
                 createdAt: new Date().toISOString(),
-                createdBy: window.currentUser.id
+                createdBy: window.currentUser?.id
             };
-
+            
             window.groups.push(newGroup);
             saveToLocalStorage();
             displayGroups();
@@ -455,24 +857,36 @@
             showNotification(`Group "${groupName}" created successfully!`);
         }
 
-        // Edit Group Functions
+        // ========================================
+        // EDIT GROUP FUNCTIONS - THIS IS WHERE editGroup IS DEFINED
+        // ========================================
+
         function editGroup(groupId) {
             const group = window.groups.find(g => g.id === groupId);
             if (!group) return;
-
+            
             editingGroupId = groupId;
-            document.getElementById('editGroupName').value = group.name;
+            const editGroupNameInput = document.getElementById('editGroupName');
+            if (editGroupNameInput) {
+                editGroupNameInput.value = group.name;
+            }
+            
             setupEditMemberSelection(group);
-            document.getElementById('editGroupModal').style.display = 'block';
+            const editModal = document.getElementById('editGroupModal');
+            if (editModal) {
+                editModal.style.display = 'block';
+            }
         }
 
         function setupEditMemberSelection(group) {
             const grid = document.getElementById('editMemberSelectionGrid');
-            grid.innerHTML = group.members.map(member => `
-                <div class="selectable-box selected" data-member="${member}">
-                    ${member}
-                </div>
-            `).join('');
+            if (grid && group.members) {
+                grid.innerHTML = group.members.map(member => `
+                    <div class="selectable-box selected" data-member="${escapeHtml(member)}">
+                        ${escapeHtml(member)}
+                    </div>
+                `).join('');
+            }
         }
 
         function selectAllEditMembers() {
@@ -483,7 +897,7 @@
 
         function clearAllEditMembers() {
             document.querySelectorAll('#editMemberSelectionGrid .selectable-box').forEach(box => {
-                if (box.dataset.member !== window.currentUser.name) {
+                if (box.dataset.member !== window.currentUser?.name) {
                     box.classList.remove('selected');
                 }
             });
@@ -491,64 +905,67 @@
 
         function addNewEditMember() {
             const input = document.getElementById('editNewMemberInput');
-            const memberName = input.value.trim();
-
+            const memberName = input?.value?.trim();
+            
             if (!memberName) return;
-
+            
             // Check for duplicates
             const existingMembers = Array.from(document.querySelectorAll('#editMemberSelectionGrid .selectable-box')).map(box => box.dataset.member);
             const dynamicMembers = Array.from(document.querySelectorAll('#editDynamicMembers .dynamic-item-name')).map(el => el.textContent);
-
+            
             if (existingMembers.includes(memberName) || dynamicMembers.includes(memberName)) {
                 showNotification('Member already exists', 'error');
                 return;
             }
-
+            
             const dynamicContainer = document.getElementById('editDynamicMembers');
-            const itemId = 'edit_member_' + (++dynamicMemberCounter);
-
-            const memberItem = document.createElement('div');
-            memberItem.className = 'dynamic-item';
-            memberItem.id = itemId;
-            memberItem.innerHTML = `
-                <div class="dynamic-item-content">
-                    <span class="dynamic-item-name">${memberName}</span>
-                </div>
-                <div class="dynamic-item-actions">
-                    <button class="icon-btn edit" onclick="editMember('${itemId}')" title="Edit">✏️</button>
-                    <button class="icon-btn delete" onclick="removeMember('${itemId}')" title="Remove">✖️</button>
-                </div>
-            `;
-
-            dynamicContainer.appendChild(memberItem);
-            input.value = '';
-            showNotification('Member added successfully');
+            const itemId = `editmember_${++dynamicMemberCounter}`;
+            
+            if (dynamicContainer) {
+                const memberItem = document.createElement('div');
+                memberItem.className = 'dynamic-item';
+                memberItem.id = itemId;
+                memberItem.innerHTML = `
+                    <div class="dynamic-item-content">
+                        <span class="dynamic-item-name">${escapeHtml(memberName)}</span>
+                    </div>
+                    <div class="dynamic-item-actions">
+                        <button class="icon-btn edit" onclick="editMember('${itemId}')" title="Edit">✏</button>
+                        <button class="icon-btn delete" onclick="removeMember('${itemId}')" title="Remove">🗑</button>
+                    </div>
+                `;
+                
+                dynamicContainer.appendChild(memberItem);
+                input.value = '';
+                showNotification('Member added successfully');
+            }
         }
 
         function saveGroupChanges() {
             if (!editingGroupId) return;
-
-            const groupName = document.getElementById('editGroupName').value.trim();
-
+            
+            const editGroupNameInput = document.getElementById('editGroupName');
+            const groupName = editGroupNameInput?.value?.trim();
+            
             // Get selected members from boxes
             const selectedBoxes = document.querySelectorAll('#editMemberSelectionGrid .selectable-box.selected');
             const selectedMembers = Array.from(selectedBoxes).map(box => box.dataset.member);
-
+            
             // Get dynamic members
             const dynamicMembers = Array.from(document.querySelectorAll('#editDynamicMembers .dynamic-item-name')).map(el => el.textContent);
-
+            
             const allMembers = [...selectedMembers, ...dynamicMembers];
-
+            
             if (!groupName) {
                 showNotification('Please enter a group name', 'error');
                 return;
             }
-
+            
             if (allMembers.length < 2) {
                 showNotification('Group must have at least two members', 'error');
                 return;
             }
-
+            
             const groupIndex = window.groups.findIndex(g => g.id === editingGroupId);
             if (groupIndex !== -1) {
                 window.groups[groupIndex].name = groupName;
@@ -561,15 +978,19 @@
         }
 
         function closeEditGroupModal() {
-            document.getElementById('editGroupModal').style.display = 'none';
-            document.getElementById('editDynamicMembers').innerHTML = '';
+            const editModal = document.getElementById('editGroupModal');
+            const editDynamicMembers = document.getElementById('editDynamicMembers');
+            
+            if (editModal) editModal.style.display = 'none';
+            if (editDynamicMembers) editDynamicMembers.innerHTML = '';
+            
             editingGroupId = null;
         }
 
         function deleteGroup(groupId) {
             const group = window.groups.find(g => g.id === groupId);
             if (!group) return;
-
+            
             if (confirm(`Are you sure you want to delete the group "${group.name}"? This action cannot be undone.`)) {
                 window.groups = window.groups.filter(g => g.id !== groupId);
                 saveToLocalStorage();
@@ -577,6 +998,10 @@
                 showNotification('Group deleted successfully');
             }
         }
+
+        // ========================================
+        // UTILITY FUNCTIONS
+        // ========================================
 
         function generateId() {
             return Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -609,22 +1034,47 @@
                 notification.textContent = message;
                 notification.className = `notification ${type}`;
                 notification.style.display = 'block';
-
+                
                 setTimeout(() => {
                     notification.style.display = 'none';
                 }, 3000);
             }
         }
 
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatRelativeTime(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMins / 60);
+            const diffDays = Math.floor(diffHours / 24);
+            
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            return date.toLocaleDateString();
+        }
+
+        // ========================================
+        // EVENT LISTENERS
+        // ========================================
+
         // Toggle selectable boxes
         document.addEventListener('click', function(e) {
             if (e.target.classList.contains('selectable-box')) {
                 // Don't allow deselecting current user
-                if (e.target.dataset.member === window.currentUser.name) return;
-
+                if (e.target.dataset.member === window.currentUser?.name) return;
+                
                 e.target.classList.toggle('selected');
             }
-
+            
             // Modal close handlers
             if (e.target.classList.contains('modal')) {
                 e.target.style.display = 'none';
@@ -642,6 +1092,8 @@
             }
         });
     </script>
+
+    <!-- External Scripts -->
     <script src="js/shared-utils.js"></script>
     <script src="js/shared-supabase.js"></script>
     <script src="js/shared-sync.js"></script>

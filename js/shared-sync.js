@@ -463,3 +463,129 @@ window.debugSync = function() {
 };
 
 console.log('✅ Unified SplitEasy sync system loaded successfully');
+
+// Enhanced User ID validation functions (add to existing shared-sync.js)
+
+// Check if user ID exists in database
+async function checkUserIdExists(userId) {
+    if (window.splitEasySync?.isOffline || !window.supabaseClient) {
+        console.warn('Cannot check User ID - offline or no database connection');
+        return false; // Assume available in offline mode
+    }
+    
+    try {
+        console.log('🔍 Checking User ID availability:', userId);
+        
+        const { data, error } = await window.supabaseClient
+            .from('users')
+            .select('id')
+            .ilike('id', userId) // Case-insensitive check
+            .single();
+        
+        if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+            throw error;
+        }
+        
+        const exists = !!data;
+        console.log('User ID check result:', { userId, exists });
+        return exists;
+        
+    } catch (error) {
+        console.error('Failed to check User ID:', error);
+        throw error;
+    }
+}
+
+// Create user in database with validation
+async function createUserInDatabase(userId, userName) {
+    if (window.splitEasySync?.isOffline || !window.supabaseClient) {
+        console.warn('Cannot create user in database - offline or no connection');
+        return { id: userId, name: userName }; // Return local data
+    }
+    
+    try {
+        console.log('👤 Creating user in database:', { userId, userName });
+        
+        // Double-check availability
+        const exists = await checkUserIdExists(userId);
+        if (exists) {
+            throw new Error('User ID is already taken');
+        }
+        
+        const userData = {
+            id: userId,
+            name: userName,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+        
+        const { data, error } = await window.supabaseClient
+            .from('users')
+            .insert(userData)
+            .select()
+            .single();
+        
+        if (error) {
+            throw error;
+        }
+        
+        console.log('✅ User created in database successfully');
+        return data;
+        
+    } catch (error) {
+        console.error('❌ Failed to create user in database:', error);
+        throw error;
+    }
+}
+
+// Get user by ID from database
+async function getUserFromDatabase(userId) {
+    if (window.splitEasySync?.isOffline || !window.supabaseClient) {
+        return null;
+    }
+    
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .single();
+        
+        if (error && error.code !== 'PGRST116') {
+            throw error;
+        }
+        
+        return data;
+    } catch (error) {
+        console.error('Failed to get user from database:', error);
+        return null;
+    }
+}
+
+// Delete expense from database
+async function deleteExpenseFromDatabase(expenseId) {
+    if (window.splitEasySync.isOffline || !window.supabaseClient) {
+        console.log('🔄 Queuing expense deletion for later sync');
+        return;
+    }
+    
+    try {
+        console.log('🗑️ Deleting expense from database:', expenseId);
+        const { error } = await window.supabaseClient
+            .from('expenses')
+            .delete()
+            .eq('id', expenseId);
+            
+        if (error) throw error;
+        console.log('✅ Expense deleted from database successfully');
+    } catch (error) {
+        console.error('❌ Failed to delete expense from database:', error);
+        throw error;
+    }
+}
+
+// Make functions available globally
+window.checkUserIdExists = checkUserIdExists;
+window.createUserInDatabase = createUserInDatabase;
+window.getUserFromDatabase = getUserFromDatabase;
+window.deleteExpenseFromDatabase = deleteExpenseFromDatabase;
