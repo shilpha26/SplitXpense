@@ -16,14 +16,14 @@
         <div class="container">
             <div class="group-header-left">
                 <button class="btn-back" id="backBtn" onclick="goBack()">←</button>
-                <class="group-info">
+                <div class="group-info">
                     <h1 id="groupName">Loading...</h1>
                     <p id="groupMeta">Loading group details...</p>
-                </class>
+                </div>
             </div>
             <div class="group-actions">
                 <button class="btn-secondary" id="shareBtn" onclick="shareGroup()">Share</button>
-                <button class="btn-success" id="editBtn" onclick="editGroup()">Edit</button>
+                <button class="btn-success" id="editBtn" onclick="handleEditGroup()">Edit</button>
             </div>
         </div>
     </header>
@@ -42,11 +42,9 @@
                 <h3>Expenses</h3>
                 <button class="btn-success" onclick="showAddExpenseModal()">Add Expense</button>
             </div>
-
             <div id="expensesList" class="expenses-list">
                 <!-- Expenses will be loaded here -->
             </div>
-
             <div id="noExpenses" class="empty-state">
                 <p>No Expenses Yet</p>
                 <p>Add your first expense to start tracking group spending!</p>
@@ -226,215 +224,383 @@
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-        // Global variables
+        // ========================================
+        // GLOBAL VARIABLES
+        // ========================================
         let currentGroup = null;
         let currentGroupId = null;
         let editingExpenseId = null;
         let dynamicMemberCounter = 0;
 
-        // Initialize page
+        // Store group globally so it's accessible everywhere
+        window.currentGroup = null;
+
+        // ========================================
+        // INITIALIZATION
+        // ========================================
         document.addEventListener('DOMContentLoaded', function() {
-    // CRITICAL: Initialize user session first
-    const userData = localStorage.getItem('spliteasy_current_user');
-    if (userData) {
-        try {
-            window.currentUser = JSON.parse(userData);
-            console.log('👤 User session restored for group detail:', window.currentUser.name);
-        } catch (error) {
-            console.error('Failed to parse user data:', error);
-            // Don't redirect immediately - might be a shared link
-        }
-    }
-    
-    // Get group ID from URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const groupId = urlParams.get('id');
-    
-    if (groupId) {
-        window.currentGroupId = groupId;
-        loadGroupData(groupId);
-    } else {
-        showNotification('No group ID provided', 'error');
-        setTimeout(() => {
-            window.location.href = 'index.html';
-        }, 2000);
-    }
+            console.log('🚀 Group Detail Page Loading...');
+            console.log('Current URL:', window.location.href);
+            console.log('URL search:', window.location.search);
 
-     if (window.currentUser && typeof window.startRealtimeSync === 'function') {
-        setTimeout(() => {
-            window.startRealtimeSync();
-        }, 2000); // Give time for group to load
-    }
-});
+            // Initialize Supabase if available
+            if (typeof window.initializeSupabase === 'function') {
+                try {
+                    window.initializeSupabase();
+                } catch (error) {
+                    console.warn('Supabase initialization failed:', error);
+                }
+            }
 
+            // CRITICAL: Initialize user session first
+            const userData = localStorage.getItem('spliteasy_current_user');
+            if (userData) {
+                try {
+                    window.currentUser = JSON.parse(userData);
+                    console.log('👤 User session restored for group detail:', window.currentUser.name);
+                } catch (error) {
+                    console.error('Failed to parse user data:', error);
+                    // Don't redirect immediately - might be a shared link
+                }
+            } else {
+                console.warn('⚠️ No user session found');
+            }
 
-        // FIXED: Enhanced loadGroupData with share link support
-async function loadGroupData(groupId) {
-    console.log('🔍 Loading group data for ID:', groupId);
-    
-    // First try to load from localStorage
-    const groups = loadFromLocalStorage();
-    let currentGroup = groups.find(g => g.id === groupId);
-    
-    if (currentGroup) {
-        console.log('✅ Group found in localStorage');
-        // Group exists locally, proceed normally
-        window.currentGroup = currentGroup;
-        updateGroupDisplay();
-        return;
-    }
-    
-    // Group not found locally - try to fetch from database
-    console.log('🔄 Group not found locally, checking database...');
-    showNotification('Loading group from link...', 'info');
-    
-    if (!window.currentUser) {
-        showNotification('Please log in to join this group', 'error');
-        setTimeout(() => {
-            window.location.href = 'index.html';
-        }, 2000);
-        return;
-    }
-    
-    try {
-        // Fetch group from database
-        if (typeof window.fetchGroupFromDatabase !== 'function') {
-            throw new Error('Database functions not available');
-        }
-        
-        const fetchedGroup = await window.fetchGroupFromDatabase(groupId);
-        
-        if (!fetchedGroup) {
-            showNotification('Group not found or access denied', 'error');
-            setTimeout(() => {
-                window.location.href = 'index.html';
-            }, 2000);
-            return;
-        }
-        
-        // Ask user if they want to join the group
-        const joinConfirm = confirm(
-            `Do you want to join the group "${fetchedGroup.name}"?\n\n` +
-            `Members: ${fetchedGroup.members.join(', ')}\n` +
-            `Expenses: ${fetchedGroup.expenses.length}\n` +
-            `Total: ${formatCurrency(fetchedGroup.totalExpenses)}`
-        );
-        
-        if (!joinConfirm) {
-            showNotification('Group join cancelled', 'info');
-            setTimeout(() => {
-                window.location.href = 'index.html';
-            }, 1500);
-            return;
-        }
-        
-        // Join user to group in database
-        const joined = await window.joinUserToGroup(groupId, window.currentUser.id);
-        
-        if (!joined) {
-            showNotification('Failed to join group. Please try again.', 'error');
-            return;
-        }
-        
-        // Add user to local group data
-        if (!fetchedGroup.members.includes(window.currentUser.id)) {
-            fetchedGroup.members.push(window.currentUser.id);
-        }
-        
-        // Save group locally
-        const localGroups = loadFromLocalStorage();
-        localGroups.push(fetchedGroup);
-        localStorage.setItem('spliteasy_groups', JSON.stringify(localGroups));
-        
-        // Set as current group
-        window.currentGroup = fetchedGroup;
-        updateGroupDisplay();
-        
-        showNotification(`Successfully joined "${fetchedGroup.name}"!`, 'success');
-        
-    } catch (error) {
-        console.error('Failed to load group from share link:', error);
-        showNotification('Failed to load group. Please check your connection.', 'error');
-        setTimeout(() => {
-            window.location.href = 'index.html';
-        }, 2000);
-    }
-}
+            // Get group ID from URL with enhanced debugging
+            console.log('📋 Parsing URL parameters...');
+            const urlParams = new URLSearchParams(window.location.search);
+            console.log('URL Params object:', urlParams);
+            console.log('All URL param entries:', [...urlParams.entries()]);
 
-// Helper function to update group display
-function updateGroupDisplay() {
-    if (!window.currentGroup) return;
-    
-    safeUpdateElement('groupName', window.currentGroup.name);
-    safeUpdateElement('groupMeta', 
-        `${window.currentGroup.members.length} members • ${window.currentGroup.expenses?.length || 0} expenses • Created ${formatDate(window.currentGroup.createdAt)}`
-    );
-    safeUpdateElement('totalExpensesAmount', formatCurrency(window.currentGroup.totalExpenses || 0));
-    
-    displayExpenses();
-    calculateBalances();
-}
+            const groupId = urlParams.get('id');
+            console.log('🎯 Group ID from URL:', groupId);
 
+            if (groupId) {
+                console.log('✅ Group ID found, proceeding with load...');
+                window.currentGroupId = groupId;
+                currentGroupId = groupId;
+
+                loadGroupData(groupId);
+            } else {
+                console.error('❌ No group ID provided in URL');
+                console.log('Available URL params:', window.location.search);
+
+                showNotification('No group ID provided', 'error');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 2000);
+            }
+
+            // Initialize real-time sync for group detail page
+            if (window.currentUser && typeof window.startRealtimeSync === 'function') {
+                console.log('🔄 Scheduling real-time sync initialization...');
+                setTimeout(() => {
+                    window.startRealtimeSync();
+                }, 2000); // Give time for group to load
+            } else {
+                console.log('⚠️ Real-time sync not initialized - missing user or function');
+            }
+        });
+
+        // ========================================
+        // CORE FUNCTIONS - FIXED FOR EXPENSE PERSISTENCE
+        // ========================================
+
+        // FIXED: Enhanced loadGroupData with persistent storage
+        async function loadGroupData(groupId) {
+            console.log('🔍 Loading group data for ID:', groupId);
+
+            // First try to load from localStorage - THIS IS CRITICAL
+            const groups = loadFromLocalStorage();
+            console.log('📊 Loaded groups from localStorage:', groups.length, 'groups found');
+
+            let foundGroup = groups.find(g => g.id === groupId);
+
+            if (foundGroup) {
+                console.log('✅ Group found in localStorage:', foundGroup.name);
+                console.log('📋 Group has', foundGroup.expenses?.length || 0, 'expenses');
+
+                // CRITICAL: Set both currentGroup references
+                currentGroup = foundGroup;
+                window.currentGroup = foundGroup;
+
+                // Update display immediately with local data
+                updateGroupDisplay();
+                return;
+            }
+
+            // Group not found locally - try to fetch from database
+            console.log('🔄 Group not found locally, checking database...');
+            showNotification('Loading group from link...', 'info');
+
+            if (!window.currentUser) {
+                showNotification('Please log in to join this group', 'error');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 2000);
+                return;
+            }
+
+            try {
+                // Fetch group from database
+                if (typeof window.fetchGroupFromDatabase !== 'function') {
+                    throw new Error('Database functions not available');
+                }
+
+                const fetchedGroup = await window.fetchGroupFromDatabase(groupId);
+
+                if (!fetchedGroup) {
+                    showNotification('Group not found or access denied', 'error');
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 2000);
+                    return;
+                }
+
+                // Ask user if they want to join the group
+                const joinConfirm = confirm(
+                    `Do you want to join the group "${fetchedGroup.name}"?\n\n` +
+                    `Members: ${fetchedGroup.members.join(', ')}\n` +
+                    `Expenses: ${fetchedGroup.expenses?.length || 0}\n` +
+                    `Total: ${formatCurrency(fetchedGroup.totalExpenses)}`
+                );
+
+                if (!joinConfirm) {
+                    showNotification('Group join cancelled', 'info');
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 1500);
+                    return;
+                }
+
+                // Join user to group in database
+                const joined = await window.joinUserToGroup(groupId, window.currentUser.id);
+
+                if (!joined) {
+                    showNotification('Failed to join group. Please try again.', 'error');
+                    return;
+                }
+
+                // Add user to local group data
+                if (!fetchedGroup.members.includes(window.currentUser.id)) {
+                    fetchedGroup.members.push(window.currentUser.id);
+                }
+
+                // CRITICAL: Save group locally with proper structure
+                const localGroups = loadFromLocalStorage();
+                localGroups.push(fetchedGroup);
+                saveGroupsToLocalStorage(localGroups);
+
+                // Set as current group
+                currentGroup = fetchedGroup;
+                window.currentGroup = fetchedGroup;
+                updateGroupDisplay();
+
+                showNotification(`Successfully joined "${fetchedGroup.name}"!`, 'success');
+
+            } catch (error) {
+                console.error('Failed to load group from share link:', error);
+                showNotification('Failed to load group. Please check your connection.', 'error');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 2000);
+            }
+        }
+
+        // FIXED: Enhanced localStorage functions
+        function loadFromLocalStorage() {
+            try {
+                const data = localStorage.getItem('spliteasy_groups');
+                const groups = data ? JSON.parse(data) : [];
+                console.log('📊 LoadFromLocalStorage: Found', groups.length, 'groups');
+                return groups;
+            } catch (error) {
+                console.error('❌ Error loading from localStorage:', error);
+                return [];
+            }
+        }
+
+        // FIXED: Critical - proper save function that preserves ALL data
+        function saveGroupsToLocalStorage(groups) {
+            try {
+                console.log('💾 Saving', groups.length, 'groups to localStorage');
+
+                // Ensure each group has proper structure and calculated totals
+                groups.forEach((group, index) => {
+                    console.log(`📋 Group ${index + 1}: "${group.name}" has ${group.expenses?.length || 0} expenses`);
+
+                    // Ensure expenses array exists
+                    if (!group.expenses) {
+                        group.expenses = [];
+                    }
+
+                    // Calculate total expenses
+                    if (group.expenses.length > 0) {
+                        group.totalExpenses = group.expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+
+                        // Ensure each expense has proper structure
+                        group.expenses.forEach(expense => {
+                            if (expense.splitBetween && expense.splitBetween.length > 0) {
+                                expense.perPersonAmount = parseFloat(expense.amount || 0) / expense.splitBetween.length;
+                            }
+                        });
+                    } else {
+                        group.totalExpenses = 0;
+                    }
+                });
+
+                // Save with detailed logging
+                const jsonString = JSON.stringify(groups, null, 2);
+                localStorage.setItem('spliteasy_groups', jsonString);
+                console.log('✅ Successfully saved groups to localStorage');
+
+                // Verify save
+                const verification = localStorage.getItem('spliteasy_groups');
+                const parsedVerification = JSON.parse(verification);
+                console.log('🔍 Verification: Saved', parsedVerification.length, 'groups');
+
+            } catch (error) {
+                console.error('❌ Failed to save to localStorage:', error);
+                showNotification('Failed to save data locally', 'error');
+            }
+        }
+
+        // FIXED: Critical updateGroupInStorage function
+        function updateGroupInStorage() {
+            console.log('🔄 Updating group in storage for group ID:', currentGroupId);
+
+            if (!currentGroup || !currentGroupId) {
+                console.error('❌ No currentGroup or currentGroupId to update');
+                return;
+            }
+
+            try {
+                // Load all groups from localStorage
+                const allGroups = loadFromLocalStorage();
+                console.log('📊 Found', allGroups.length, 'total groups in storage');
+
+                // Find the index of the current group
+                const groupIndex = allGroups.findIndex(g => g.id === currentGroupId);
+
+                if (groupIndex !== -1) {
+                    console.log('📍 Found group at index', groupIndex, 'in localStorage');
+                    console.log('📋 Updating with', currentGroup.expenses?.length || 0, 'expenses');
+
+                    // CRITICAL: Replace the entire group object with current data
+                    allGroups[groupIndex] = { ...currentGroup };
+
+                    // Update both global references
+                    window.currentGroup = currentGroup;
+
+                    // Save back to localStorage
+                    saveGroupsToLocalStorage(allGroups);
+
+                    console.log('✅ Successfully updated group in storage');
+                } else {
+                    console.error('❌ Group not found in localStorage for update');
+                    // Group doesn't exist, add it
+                    allGroups.push(currentGroup);
+                    saveGroupsToLocalStorage(allGroups);
+                    console.log('✅ Added new group to storage');
+                }
+            } catch (error) {
+                console.error('❌ Failed to update group in storage:', error);
+            }
+        }
+
+        // Helper function to update group display
+        function updateGroupDisplay() {
+            if (!currentGroup) {
+                console.error('No currentGroup to display');
+                return;
+            }
+
+            console.log('🎨 Updating display for group:', currentGroup.name);
+            console.log('📋 Group has', currentGroup.expenses?.length || 0, 'expenses to display');
+
+            safeUpdateElement('groupName', currentGroup.name);
+            safeUpdateElement('groupMeta', 
+                `${currentGroup.members.length} members • ${currentGroup.expenses?.length || 0} expenses • Created ${formatDate(currentGroup.createdAt)}`
+            );
+            safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses || 0));
+
+            displayExpenses();
+            calculateBalances();
+        }
 
         function safeUpdateElement(id, content) {
             const element = document.getElementById(id);
             if (element) {
                 element.textContent = content;
+            } else {
+                console.warn(`Element with id '${id}' not found`);
             }
         }
 
+        // FIXED: Enhanced displayExpenses with detailed logging
         function displayExpenses() {
+            console.log('🎨 DisplayExpenses called');
+            console.log('📋 Current group expenses:', currentGroup?.expenses?.length || 0);
+
             const expensesList = document.getElementById('expensesList');
             const noExpenses = document.getElementById('noExpenses');
 
-            if (!currentGroup.expenses || currentGroup.expenses.length === 0) {
+            if (!currentGroup || !currentGroup.expenses || currentGroup.expenses.length === 0) {
+                console.log('📭 No expenses to display');
                 if (expensesList) expensesList.style.display = 'none';
                 if (noExpenses) noExpenses.style.display = 'block';
                 return;
             }
 
+            console.log('📋 Displaying', currentGroup.expenses.length, 'expenses');
             if (expensesList) expensesList.style.display = 'block';
             if (noExpenses) noExpenses.style.display = 'none';
 
             if (expensesList) {
-                expensesList.innerHTML = currentGroup.expenses.map(expense => 
-                    `<div class="expense-item">
-                        <div class="expense-item-header">
-                            <div class="expense-actions">
-                                <button class="expense-action-btn edit" onclick="editExpense('${expense.id}')" title="Edit Expense">
-                                    ✏️
-                                </button>
-                                <button class="expense-action-btn delete" onclick="deleteExpense('${expense.id}')" title="Delete Expense">
-                                    🗑️
-                                </button>
+                expensesList.innerHTML = currentGroup.expenses.map((expense, index) => {
+                    console.log(`💰 Expense ${index + 1}:`, expense.name, '-', formatCurrency(expense.amount));
+                    return `
+                        <div class="expense-item">
+                            <div class="expense-item-header">
+                                <div class="expense-actions">
+                                    <button class="expense-action-btn edit" onclick="editExpense('${expense.id}')" title="Edit Expense">✏️</button>
+                                    <button class="expense-action-btn delete" onclick="deleteExpense('${expense.id}')" title="Delete Expense">🗑️</button>
+                                </div>
+                            </div>
+                            <div class="expense-content">
+                                <div class="expense-info">
+                                    <h4>${expense.name}</h4>
+                                    <p>Paid by ${expense.paidBy} • Split between ${expense.splitBetween?.join(', ') || 'Unknown'}</p>
+                                    <small>${formatDate(expense.date)}</small>
+                                </div>
+                                <div class="expense-amount">
+                                    ${formatCurrency(expense.amount)}
+                                </div>
                             </div>
                         </div>
-                        <div class="expense-content">
-                            <div class="expense-info">
-                                <h4>${expense.name}</h4>
-                                <p>Paid by ${expense.paidBy} • Split between ${expense.splitBetween?.join(', ') || 'Unknown'}</p>
-                                <small>${formatDate(expense.date)}</small>
-                            </div>
-                            <div class="expense-amount">
-                                ${formatCurrency(expense.amount)}
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
+
+                console.log('✅ Expenses HTML generated and inserted');
             }
         }
 
-        // FIXED: Enhanced Settlement System with Payment Instructions (A → B format)
+        // FIXED: Enhanced Settlement System
         function calculateBalances() {
             const balancesList = document.getElementById('balancesList');
-            if (!balancesList || !currentGroup.expenses || currentGroup.expenses.length === 0) {
-                if (balancesList) balancesList.innerHTML = '<p class="no-settlements">No expenses to calculate settlements</p>';
+
+            if (!balancesList || !currentGroup || !currentGroup.expenses || currentGroup.expenses.length === 0) {
+                if (balancesList) {
+                    balancesList.innerHTML = '<p class="no-settlements">No expenses to calculate settlements</p>';
+                }
                 return;
             }
 
             // Calculate individual balances
             const balances = {};
-            currentGroup.members.forEach(member => balances[member] = 0);
+            currentGroup.members.forEach(member => {
+                balances[member] = 0;
+            });
 
             currentGroup.expenses.forEach(expense => {
                 const amount = parseFloat(expense.amount);
@@ -454,12 +620,12 @@ function updateGroupDisplay() {
                 });
             });
 
-            // Get creditors (people who are owed money) and debtors (people who owe money)
+            // Get creditors and debtors
             const creditors = [];
             const debtors = [];
 
             Object.entries(balances).forEach(([member, amount]) => {
-                if (Math.abs(amount) > 0.01) { // Ignore very small amounts
+                if (Math.abs(amount) > 0.01) {
                     if (amount > 0) {
                         creditors.push({ name: member, amount: amount });
                     } else {
@@ -468,18 +634,16 @@ function updateGroupDisplay() {
                 }
             });
 
-            // Sort creditors and debtors by amount (largest first)
             creditors.sort((a, b) => b.amount - a.amount);
             debtors.sort((a, b) => b.amount - a.amount);
 
-            // Calculate optimal settlements using greedy algorithm
+            // Calculate optimal settlements
             const settlements = [];
             let i = 0, j = 0;
 
             while (i < creditors.length && j < debtors.length) {
                 const creditor = creditors[i];
                 const debtor = debtors[j];
-
                 const settlementAmount = Math.min(creditor.amount, debtor.amount);
 
                 settlements.push({
@@ -499,7 +663,7 @@ function updateGroupDisplay() {
             if (settlements.length === 0) {
                 balancesList.innerHTML = `
                     <div class="settlement-complete">
-                        <div class="settlement-icon">🎉</div>
+                        <div class="settlement-icon">✅</div>
                         <h4>All Settled Up!</h4>
                         <p>No payments needed - everyone is even!</p>
                     </div>
@@ -530,7 +694,9 @@ function updateGroupDisplay() {
             }
         }
 
-        // Add Expense Functions
+        // ========================================
+        // ADD EXPENSE FUNCTIONS - FIXED
+        // ========================================
         function showAddExpenseModal() {
             const modal = document.getElementById('addExpenseModal');
             const paidBySelect = document.getElementById('expensePaidBy');
@@ -539,18 +705,20 @@ function updateGroupDisplay() {
             if (modal) modal.style.display = 'block';
 
             // Populate paid by dropdown
-            if (paidBySelect) {
-                paidBySelect.innerHTML = '<option value="">Select who paid</option>' + 
-                    currentGroup.members.map(member => `<option value="${member}">${member}</option>`).join('');
+            if (paidBySelect && currentGroup) {
+                paidBySelect.innerHTML = '<option value="">Select who paid</option>' +
+                    currentGroup.members.map(member => 
+                        `<option value="${member}">${member}</option>`
+                    ).join('');
             }
 
             // Populate split between grid
-            if (splitGrid) {
-                splitGrid.innerHTML = currentGroup.members.map(member => `
-                    <div class="selectable-box selected" data-member="${member}">
+            if (splitGrid && currentGroup) {
+                splitGrid.innerHTML = currentGroup.members.map(member => 
+                    `<div class="selectable-box selected" data-member="${member}">
                         ${member}
-                    </div>
-                `).join('');
+                    </div>`
+                ).join('');
             }
         }
 
@@ -577,7 +745,10 @@ function updateGroupDisplay() {
             });
         }
 
-        function addExpense() {
+        // FIXED: Critical addExpense function with proper persistence
+        async function addExpense() {
+            console.log('💰 Adding new expense...');
+
             const description = document.getElementById('expenseDescription')?.value.trim();
             const amount = document.getElementById('expenseAmount')?.value;
             const paidBy = document.getElementById('expensePaidBy')?.value;
@@ -599,19 +770,49 @@ function updateGroupDisplay() {
                 perPersonAmount: parseFloat(amount) / splitBetween.length
             };
 
-            currentGroup.expenses = currentGroup.expenses || [];
-            currentGroup.expenses.push(newExpense);
-            currentGroup.totalExpenses = (currentGroup.totalExpenses || 0) + parseFloat(amount);
+            console.log('📝 New expense created:', newExpense);
 
+            // CRITICAL: Ensure expenses array exists
+            if (!currentGroup.expenses) {
+                currentGroup.expenses = [];
+                console.log('📋 Initialized expenses array');
+            }
+
+            // Add expense to current group
+            currentGroup.expenses.push(newExpense);
+            console.log('📊 Added expense. Group now has', currentGroup.expenses.length, 'expenses');
+
+            // Recalculate total
+            currentGroup.totalExpenses = (currentGroup.totalExpenses || 0) + parseFloat(amount);
+            console.log('💰 New total expenses:', formatCurrency(currentGroup.totalExpenses));
+
+            // CRITICAL: Save to storage immediately
             updateGroupInStorage();
+
+            // Update UI
             displayExpenses();
             calculateBalances();
             safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses));
+
+            // Close modal
             closeAddExpenseModal();
-            showNotification('Expense added successfully!');
+
+            // Sync to database if available
+            if (typeof window.syncExpenseToDatabase === 'function') {
+                try {
+                    await window.syncExpenseToDatabase(newExpense, currentGroup.id);
+                    console.log('✅ Expense synced to database');
+                } catch (error) {
+                    console.warn('⚠️ Failed to sync expense to database:', error);
+                }
+            }
+
+            showNotification('Expense added successfully!', 'success');
         }
 
-        // Edit Expense Functions
+        // ========================================
+        // EDIT EXPENSE FUNCTIONS - FIXED
+        // ========================================
         function editExpense(expenseId) {
             const expense = currentGroup.expenses.find(e => e.id === expenseId);
             if (!expense) return;
@@ -623,18 +824,18 @@ function updateGroupDisplay() {
             document.getElementById('editExpenseAmount').value = expense.amount;
 
             const paidBySelect = document.getElementById('editExpensePaidBy');
-            paidBySelect.innerHTML = '<option value="">Select who paid</option>' + 
+            paidBySelect.innerHTML = '<option value="">Select who paid</option>' +
                 currentGroup.members.map(member => 
                     `<option value="${member}" ${member === expense.paidBy ? 'selected' : ''}>${member}</option>`
                 ).join('');
 
             // Populate split between grid
             const splitGrid = document.getElementById('editExpenseSplitGrid');
-            splitGrid.innerHTML = currentGroup.members.map(member => `
-                <div class="selectable-box ${expense.splitBetween?.includes(member) ? 'selected' : ''}" data-member="${member}">
+            splitGrid.innerHTML = currentGroup.members.map(member => 
+                `<div class="selectable-box ${expense.splitBetween?.includes(member) ? 'selected' : ''}" data-member="${member}">
                     ${member}
-                </div>
-            `).join('');
+                </div>`
+            ).join('');
 
             document.getElementById('editExpenseModal').style.display = 'block';
         }
@@ -656,7 +857,8 @@ function updateGroupDisplay() {
             });
         }
 
-        function saveExpenseChanges() {
+        // FIXED: Save expense changes with proper persistence
+        async function saveExpenseChanges() {
             if (!editingExpenseId) return;
 
             const description = document.getElementById('editExpenseDescription')?.value.trim();
@@ -687,45 +889,77 @@ function updateGroupDisplay() {
                 // Update total
                 currentGroup.totalExpenses = (currentGroup.totalExpenses || 0) - oldAmount + newAmount;
 
+                // CRITICAL: Save to storage
                 updateGroupInStorage();
+
+                // Update UI
                 displayExpenses();
                 calculateBalances();
                 safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses));
+
+                // Sync to database
+                if (typeof window.syncExpenseToDatabase === 'function') {
+                    try {
+                        await window.syncExpenseToDatabase(currentGroup.expenses[expenseIndex], currentGroup.id);
+                    } catch (error) {
+                        console.warn('Failed to sync expense to database:', error);
+                    }
+                }
+
                 closeEditExpenseModal();
-                showNotification('Expense updated successfully!');
+                showNotification('Expense updated successfully!', 'success');
             }
         }
 
-        function deleteExpense(expenseId) {
+        // FIXED: Delete expense with proper persistence
+        async function deleteExpense(expenseId) {
             const expense = currentGroup.expenses.find(e => e.id === expenseId);
-            if (!expense) return;
+            if (!expense) {
+                console.error('Expense not found:', expenseId);
+                return;
+            }
 
             if (!confirm(`Are you sure you want to delete the expense "${expense.name}"?`)) return;
 
-            const expenseIndex = currentGroup.expenses.findIndex(e => e.id === expenseId);
-            if (expenseIndex !== -1) {
-                const deletedExpense = currentGroup.expenses[expenseIndex];
-                currentGroup.expenses.splice(expenseIndex, 1);
-                currentGroup.totalExpenses -= parseFloat(deletedExpense.amount);
+            try {
+                showNotification('Deleting expense...', 'info');
 
-                updateGroupInStorage();
-                displayExpenses();
-                calculateBalances();
-                safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses));
-                showNotification('Expense deleted successfully');
+                // Delete from database first if available
+                if (typeof window.deleteExpenseFromDatabase === 'function') {
+                    try {
+                        await window.deleteExpenseFromDatabase(expenseId);
+                        console.log('✅ Expense deleted from database');
+                    } catch (error) {
+                        console.warn('⚠️ Database deletion failed:', error);
+                    }
+                }
+
+                // Delete from local data
+                const expenseIndex = currentGroup.expenses.findIndex(e => e.id === expenseId);
+                if (expenseIndex !== -1) {
+                    const deletedExpense = currentGroup.expenses[expenseIndex];
+                    currentGroup.expenses.splice(expenseIndex, 1);
+                    currentGroup.totalExpenses = Math.max(0, (currentGroup.totalExpenses || 0) - parseFloat(deletedExpense.amount));
+
+                    // CRITICAL: Save changes immediately
+                    updateGroupInStorage();
+
+                    // Update UI
+                    displayExpenses();
+                    calculateBalances();
+                    safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses));
+
+                    showNotification('Expense deleted successfully!', 'success');
+                }
+            } catch (error) {
+                console.error('Delete expense failed:', error);
+                showNotification(`Failed to delete expense: ${error.message}`, 'error');
             }
         }
 
-        function updateGroupInStorage() {
-            const groups = loadFromLocalStorage();
-            const groupIndex = groups.findIndex(g => g.id === currentGroupId);
-            if (groupIndex !== -1) {
-                groups[groupIndex] = currentGroup;
-                localStorage.setItem('spliteasy_groups', JSON.stringify(groups));
-            }
-        }
-
-        // Group functions
+        // ========================================
+        // GROUP FUNCTIONS
+        // ========================================
         function shareGroup() {
             const modal = document.getElementById('shareModal');
             const shareLink = document.getElementById('shareLink');
@@ -740,7 +974,7 @@ function updateGroupDisplay() {
             if (shareLink) {
                 shareLink.select();
                 document.execCommand('copy');
-                showNotification('Link copied to clipboard!');
+                showNotification('Link copied to clipboard!', 'success');
             }
         }
 
@@ -749,15 +983,57 @@ function updateGroupDisplay() {
             if (modal) modal.style.display = 'none';
         }
 
+        // FIXED: Edit Group function with proper error handling
+        function handleEditGroup() {
+            console.log('Edit button clicked');
+            console.log('Current group:', window.currentGroup || currentGroup);
+
+            try {
+                editGroup();
+            } catch (error) {
+                console.error('Error in editGroup:', error);
+                showNotification('Failed to open edit dialog', 'error');
+            }
+        }
+
         function editGroup() {
-            document.getElementById('editGroupName').value = currentGroup.name;
+            const group = window.currentGroup || currentGroup;
+
+            if (!group) {
+                console.error('No current group found');
+                showNotification('Group data not available', 'error');
+                return;
+            }
+
+            // Populate group name
+            const nameInput = document.getElementById('editGroupName');
+            if (nameInput) {
+                nameInput.value = group.name;
+            }
+
+            // Setup members
             setupEditGroupMembers();
-            document.getElementById('editGroupModal').style.display = 'block';
+
+            // Show modal
+            const modal = document.getElementById('editGroupModal');
+            if (modal) {
+                modal.style.display = 'block';
+            }
         }
 
         function setupEditGroupMembers() {
+            const group = window.currentGroup || currentGroup;
+
+            if (!group || !group.members) {
+                return;
+            }
+
             const grid = document.getElementById('editGroupMembersGrid');
-            grid.innerHTML = currentGroup.members.map(member => `
+            if (!grid) {
+                return;
+            }
+
+            grid.innerHTML = group.members.map(member => `
                 <div class="selectable-box selected" data-member="${member}">
                     ${member}
                 </div>
@@ -782,7 +1058,6 @@ function updateGroupDisplay() {
 
             if (!memberName) return;
 
-            // Check for duplicates
             const existingMembers = Array.from(document.querySelectorAll('#editGroupMembersGrid .selectable-box')).map(box => box.dataset.member);
             const dynamicMembers = Array.from(document.querySelectorAll('#editGroupDynamicMembers .dynamic-item-name')).map(el => el.textContent);
 
@@ -792,8 +1067,7 @@ function updateGroupDisplay() {
             }
 
             const dynamicContainer = document.getElementById('editGroupDynamicMembers');
-            const itemId = 'edit_group_member_' + (++dynamicMemberCounter);
-
+            const itemId = `editgroupmember${dynamicMemberCounter++}`;
             const memberItem = document.createElement('div');
             memberItem.className = 'dynamic-item';
             memberItem.id = itemId;
@@ -803,39 +1077,42 @@ function updateGroupDisplay() {
                 </div>
                 <div class="dynamic-item-actions">
                     <button class="icon-btn edit" onclick="editGroupMember('${itemId}')" title="Edit">✏️</button>
-                    <button class="icon-btn delete" onclick="removeGroupMember('${itemId}')" title="Remove">✖️</button>
+                    <button class="icon-btn delete" onclick="removeGroupMember('${itemId}')" title="Remove">🗑️</button>
                 </div>
             `;
 
             dynamicContainer.appendChild(memberItem);
             input.value = '';
-            showNotification('Member added successfully');
+            showNotification('Member added successfully', 'success');
         }
 
         function editGroupMember(itemId) {
             const item = document.getElementById(itemId);
             const nameEl = item.querySelector('.dynamic-item-name');
             const currentName = nameEl.textContent;
-
             const newName = prompt('Edit member name:', currentName);
+
             if (newName && newName.trim() && newName.trim() !== currentName) {
                 nameEl.textContent = newName.trim();
-                showNotification('Member updated');
+                showNotification('Member updated', 'success');
             }
         }
 
         function removeGroupMember(itemId) {
             if (confirm('Remove this member?')) {
                 document.getElementById(itemId).remove();
-                showNotification('Member removed');
+                showNotification('Member removed', 'success');
             }
         }
 
-        function saveGroupChanges() {
-            const groupName = document.getElementById('editGroupName').value.trim();
+        // FIXED: Save group changes with database synchronization
+        async function saveGroupChanges() {
+            const groupName = document.getElementById('editGroupName')?.value.trim();
             const selectedBoxes = document.querySelectorAll('#editGroupMembersGrid .selectable-box.selected');
             const selectedMembers = Array.from(selectedBoxes).map(box => box.dataset.member);
+
             const dynamicMembers = Array.from(document.querySelectorAll('#editGroupDynamicMembers .dynamic-item-name')).map(el => el.textContent);
+
             const allMembers = [...selectedMembers, ...dynamicMembers];
 
             if (!groupName || allMembers.length < 2) {
@@ -843,15 +1120,39 @@ function updateGroupDisplay() {
                 return;
             }
 
-            currentGroup.name = groupName;
-            currentGroup.members = allMembers;
+            try {
+                const group = window.currentGroup || currentGroup;
 
-            updateGroupInStorage();
-            safeUpdateElement('groupName', groupName);
-            safeUpdateElement('groupMeta', `${allMembers.length} members • ${currentGroup.expenses?.length || 0} expenses • Created ${formatDate(currentGroup.createdAt)}`);
+                // Update group data
+                group.name = groupName;
+                group.members = allMembers;
 
-            closeEditGroupModal();
-            showNotification('Group updated successfully!');
+                // Update both references
+                currentGroup = group;
+                window.currentGroup = group;
+
+                // CRITICAL: Save to storage
+                updateGroupInStorage();
+
+                // Sync to database if available
+                if (typeof window.syncGroupToDatabase === 'function') {
+                    try {
+                        await window.syncGroupToDatabase(group);
+                    } catch (dbError) {
+                        console.warn('Database sync failed:', dbError);
+                    }
+                }
+
+                // Update UI
+                updateGroupDisplay();
+
+                closeEditGroupModal();
+                showNotification('Group updated successfully!');
+
+            } catch (error) {
+                console.error('Failed to save group changes:', error);
+                showNotification('Failed to update group', 'error');
+            }
         }
 
         function closeEditGroupModal() {
@@ -859,12 +1160,39 @@ function updateGroupDisplay() {
             document.getElementById('editGroupDynamicMembers').innerHTML = '';
         }
 
-        function deleteGroupConfirm() {
-            if (confirm('Are you sure you want to delete this group? All expenses will be lost forever!')) {
+        // FIXED: Delete group with database sync
+        async function deleteGroupConfirm() {
+            if (!currentGroup) {
+                showNotification('No group to delete', 'error');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to delete the group "${currentGroup.name}"? All expenses will be lost forever!`)) return;
+
+            try {
+                // Delete from database first (if online)
+                if (typeof window.deleteGroupFromDatabase === 'function') {
+                    await window.deleteGroupFromDatabase(currentGroupId);
+                }
+
+                // Delete from local storage
                 const groups = loadFromLocalStorage().filter(g => g.id !== currentGroupId);
-                localStorage.setItem('spliteasy_groups', JSON.stringify(groups));
-                showNotification('Group deleted successfully');
-                setTimeout(() => window.location.href = 'index.html', 1500);
+                saveGroupsToLocalStorage(groups);
+
+                showNotification('Group deleted successfully!');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 1500);
+            } catch (error) {
+                console.error('Failed to delete group:', error);
+                showNotification('Failed to delete group from cloud. Deleted locally only.', 'warning');
+
+                const groups = loadFromLocalStorage().filter(g => g.id !== currentGroupId);
+                saveGroupsToLocalStorage(groups);
+
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 1500);
             }
         }
 
@@ -872,7 +1200,9 @@ function updateGroupDisplay() {
             window.location.href = 'index.html';
         }
 
-        // Utility functions
+        // ========================================
+        // UTILITY FUNCTIONS
+        // ========================================
         function generateId() {
             return Date.now().toString(36) + Math.random().toString(36).substr(2);
         }
@@ -894,36 +1224,31 @@ function updateGroupDisplay() {
             });
         }
 
-        function loadFromLocalStorage() {
-            try {
-                const data = localStorage.getItem('spliteasy_groups');
-                return data ? JSON.parse(data) : [];
-            } catch (error) {
-                console.error('Error loading from localStorage:', error);
-                return [];
-            }
-        }
-
         function showNotification(message, type = 'success') {
             const notification = document.getElementById('notification');
             if (notification) {
                 notification.textContent = message;
                 notification.className = `notification ${type}`;
                 notification.style.display = 'block';
-
                 setTimeout(() => {
                     notification.style.display = 'none';
                 }, 3000);
             }
         }
 
+        // ========================================
+        // EVENT LISTENERS
+        // ========================================
+
         // Toggle selectable boxes
         document.addEventListener('click', function(e) {
             if (e.target.classList.contains('selectable-box')) {
                 e.target.classList.toggle('selected');
             }
+        });
 
-            // Modal close handlers
+        // Modal close handlers
+        document.addEventListener('click', function(e) {
             if (e.target.classList.contains('modal')) {
                 e.target.style.display = 'none';
             }
@@ -935,7 +1260,12 @@ function updateGroupDisplay() {
                 addNewGroupMember();
             }
         });
-    </script>    
+
+        // Debug: Log when script is fully loaded
+        console.log('✅ Group detail script fully loaded with FIXED expense persistence');
+    </script>
+
+    <!-- External Scripts -->
     <script src="js/shared-utils.js"></script>
     <script src="js/shared-supabase.js"></script>
     <script src="js/shared-sync.js"></script>
