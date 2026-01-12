@@ -1,5 +1,4 @@
 # Supabase Configuration (contains sensitive credentials)
-js/config.js
 
 # Environment variables
 .env
