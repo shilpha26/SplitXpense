@@ -272,36 +272,6 @@
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script>
-        // Load config.js with error handling and wait for it to load
-        (function() {
-            return new Promise((resolve) => {
-                const script = document.createElement('script');
-                script.src = 'js/config.js';
-                script.onload = function() {
-                    console.log('✅ config.js loaded successfully');
-                    // Make sure it's available globally
-                    if (typeof SUPABASECONFIG !== 'undefined') {
-                        window.SUPABASECONFIG = SUPABASECONFIG;
-                    }
-                    resolve();
-                };
-                script.onerror = function() {
-                    console.error('❌ Failed to load js/config.js - file not found');
-                    console.error('⚠️ This is normal if config.js is gitignored');
-                    console.error('📝 For local development: Create js/config.js with your Supabase credentials');
-                    console.error('📝 For GitHub Pages: You need to manually add config.js to your repository');
-                    // Create a placeholder config to prevent errors
-                    window.SUPABASECONFIG = {
-                        url: '',
-                        anonKey: ''
-                    };
-                    resolve(); // Resolve anyway so scripts continue loading
-                };
-                document.head.appendChild(script);
-            });
-        })();
-    </script>
     <script src="js/shared-utils.js"></script>
     <script>
         // ========================================
@@ -1763,6 +1733,8 @@ console.log('Use window.forceAppUpdate() to force update');
     </script>
 
     <!-- External Scripts -->
+    <!-- Load config.js synchronously before Supabase scripts -->
+    <script src="js/config.js"></script>
     <script src="js/shared-supabase.js"></script>
     <script src="js/shared-sync.js"></script>
 </body>
