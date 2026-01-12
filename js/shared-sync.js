@@ -256,13 +256,16 @@ async function syncGroupToDatabase(group) {
         
         // Note: total_expenses, participants are computed from expenses
 
-        console.log('Group record structure:', groupRecord);
+        console.log('📤 Group record structure:', JSON.stringify(groupRecord, null, 2));
+        console.log('📤 Using schema mapping:', groupSchema);
 
         // Use upsert - Supabase will handle conflicts based on primary key
         console.log('📤 Attempting to upsert group to Supabase...');
         const { data, error } = await window.supabaseClient
             .from('groups')
-            .upsert(groupRecord)
+            .upsert(groupRecord, {
+                onConflict: 'id'  // Use 'id' as the conflict column
+            })
             .select()
             .single();
         
