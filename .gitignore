@@ -49,6 +49,6 @@ scripts/
 package.json
 package-lock.json
 
-# GitHub workflows (if not using GitHub Pages)
-.github/
+# GitHub workflows - keep .github/ for deployment
+# .github/
 
