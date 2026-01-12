@@ -187,7 +187,6 @@
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="js/config.js"></script>
     <script src="js/shared-utils.js"></script>
     <script>
         // ========================================
@@ -996,7 +995,13 @@
                 }
 
                 showNotification('Creating group in cloud...', 'info');
-                await window.syncGroupToDatabase(newGroup);
+                const result = await window.syncGroupToDatabase(newGroup);
+                
+                if (!result) {
+                    throw new Error('Group sync returned no result');
+                }
+                
+                console.log('✅ Group created in Supabase:', result);
                 
                 // Add to local array and cache
                 window.groups.push(newGroup);
@@ -1009,8 +1014,14 @@
                 // Reload groups from Supabase to ensure sync
                 await loadGroups();
             } catch (error) {
-                console.error('Failed to create group in Supabase:', error);
-                showNotification('Failed to create group. Please check your connection.', 'error');
+                console.error('❌ Failed to create group in Supabase:', error);
+                console.error('Error details:', {
+                    message: error.message,
+                    code: error.code,
+                    details: error.details,
+                    hint: error.hint
+                });
+                showNotification(`Failed to create group: ${error.message || 'Please check your connection'}`, 'error');
             }
         }
 
@@ -1499,6 +1510,8 @@ console.log('Use window.forceAppUpdate() to force update');
     </script>
 
     <!-- External Scripts -->
+    <!-- Load config.js synchronously before Supabase scripts -->
+    <script src="js/config.js"></script>
     <script src="js/shared-supabase.js"></script>
     <script src="js/shared-sync.js"></script>
     <script src="js/diagnose-schema.js"></script>

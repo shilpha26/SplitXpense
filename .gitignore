@@ -1,5 +1,10 @@
 # Supabase Configuration (contains sensitive credentials)
-js/config.js
+# Note: js/config.js is committed as it contains public anon key (safe to expose)
+
+# Environment variables
+.env
+.env.local
+.env.*.local
 
 # OS Files
 .DS_Store
@@ -23,4 +28,27 @@ node_modules/
 # Build files
 dist/
 build/
+
+# Development/Documentation files (not needed in production)
+DATABASE_SETUP.md
+DATABASE_TABLES_ANALYSIS.md
+RLS_POLICY_EXPLANATION.md
+SETUP.md
+
+# SQL scripts (for manual database setup, not needed in repo)
+supabase-migration.sql
+supabase-rls-policies.sql
+cleanup-unused-tables.sql
+verify-database.sql
+
+# Diagnostic/Development tools
+js/diagnose-schema.js
+scripts/
+
+# Package files (if not using npm)
+package.json
+package-lock.json
+
+# GitHub workflows (if not using GitHub Pages)
+.github/
 

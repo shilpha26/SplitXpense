@@ -6,40 +6,25 @@ console.log('Loading enhanced SplitEasy Supabase integration...');
 // ========================================
 // Configuration is loaded from js/config.js (gitignored)
 // If config.js doesn't exist, Supabase features will be disabled
-// Always read from window.SUPABASECONFIG directly to avoid timing issues
+let SUPABASECONFIG = null;
 
-// Function to get the current config (always reads from window)
-function getSupabaseConfig() {
-    if (typeof window !== 'undefined' && window.SUPABASECONFIG) {
-        if (window.SUPABASECONFIG.url && window.SUPABASECONFIG.anonKey) {
-            return window.SUPABASECONFIG;
-        }
-    }
-    return null;
-}
-
-// Check config on load
-// Use var to allow redeclaration (in case script loads multiple times or cache issues)
-// var allows redeclaration, so this is safe even if cached version had let/const
-var SUPABASECONFIG = getSupabaseConfig();
-
-if (SUPABASECONFIG) {
-    console.log('✅ Supabase config loaded from window.SUPABASECONFIG');
-} else {
+// Configuration is loaded from js/config.js (loaded before this script)
+// Check both window.SUPABASECONFIG and global SUPABASECONFIG
+if ((typeof SUPABASECONFIG === 'undefined' || SUPABASECONFIG === null) &&
+    (typeof window.SUPABASECONFIG === 'undefined' || window.SUPABASECONFIG === null)) {
     console.warn('⚠️ Supabase config not found. Supabase features will be disabled.');
     console.warn('📝 Please create js/config.js with your Supabase credentials.');
-    console.warn('Debug: window.SUPABASECONFIG =', typeof window !== 'undefined' ? window.SUPABASECONFIG : 'window not available');
-    
-    // Try again after a short delay in case config.js loads asynchronously
-    setTimeout(function() {
-        var delayedConfig = getSupabaseConfig();
-        if (delayedConfig) {
-            SUPABASECONFIG = delayedConfig;
-            console.log('✅ Supabase config loaded after delay');
-        } else {
-            console.error('❌ Config still not found after delay');
-        }
-    }, 200);
+    console.warn('📝 For GitHub Pages: You need to manually add config.js to your repository (or use GitHub Secrets)');
+    // Create a dummy config to prevent errors
+    SUPABASECONFIG = {
+        url: '',
+        anonKey: ''
+    };
+} else {
+    // Use window.SUPABASECONFIG if available (loaded via script tag with error handling)
+    if (typeof window.SUPABASECONFIG !== 'undefined' && window.SUPABASECONFIG !== null) {
+        SUPABASECONFIG = window.SUPABASECONFIG;
+    }
 }
 
 // Global Supabase variables
@@ -83,8 +68,7 @@ window.initializeSupabase = function() {
             currentConfig.url === 'YOUR_SUPABASE_URL_HERE' || 
             currentConfig.anonKey === 'YOUR_SUPABASE_ANON_KEY_HERE') {
             console.warn('Invalid Supabase configuration. Please check js/config.js');
-            console.warn('Copy js/config.example.js to js/config.js and add your credentials.');
-            console.warn('Debug: currentConfig =', currentConfig);
+            console.warn('Create js/config.js with your Supabase credentials.');
             isOffline = true;
             return false;
         }

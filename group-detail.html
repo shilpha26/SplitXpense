@@ -272,7 +272,6 @@
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="js/config.js"></script>
     <script src="js/shared-utils.js"></script>
     <script>
         // ========================================
@@ -1734,6 +1733,8 @@ console.log('Use window.forceAppUpdate() to force update');
     </script>
 
     <!-- External Scripts -->
+    <!-- Load config.js synchronously before Supabase scripts -->
+    <script src="js/config.js"></script>
     <script src="js/shared-supabase.js"></script>
     <script src="js/shared-sync.js"></script>
     <script src="js/diagnose-schema.js"></script>

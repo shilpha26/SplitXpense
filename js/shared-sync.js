@@ -181,13 +181,22 @@ async function syncUserToDatabase(userData) {
 
 // FIXED: Schema-aware group sync
 async function syncGroupToDatabase(group) {
+    console.log('🔄 syncGroupToDatabase called with group:', group);
+    console.log('🔄 isOffline:', window.splitEasySync?.isOffline);
+    console.log('🔄 supabaseClient:', !!window.supabaseClient);
+    console.log('🔄 currentUser:', window.currentUser);
+    
     if (window.splitEasySync.isOffline || !window.supabaseClient || !window.currentUser) {
-        console.log('Skipping group sync - offline, no client, or no user');
-        return null;
+        const reason = !window.supabaseClient ? 'no Supabase client' : 
+                       !window.currentUser ? 'no current user' : 'offline';
+        console.error('❌ Skipping group sync -', reason);
+        throw new Error(`Cannot sync group: ${reason}`);
     }
 
     // Ensure schema is detected
+    console.log('🔍 Detecting database schema...');
     await detectDatabaseSchema();
+    console.log('✅ Schema detection complete');
 
     try {
         console.log('Syncing group to database:', group.name);
@@ -248,30 +257,44 @@ async function syncGroupToDatabase(group) {
         // Note: total_expenses, participants are computed from expenses
 
         console.log('Group record structure:', groupRecord);
-        console.log('Members being saved:', groupRecord[groupSchema.members]);
 
+        // Use upsert - Supabase will handle conflicts based on primary key
+        console.log('📤 Attempting to upsert group to Supabase...');
         const { data, error } = await window.supabaseClient
             .from('groups')
-            .upsert(groupRecord, { onConflict: 'id' })
+            .upsert(groupRecord)
             .select()
             .single();
+        
+        console.log('📥 Supabase response - data:', data);
+        console.log('📥 Supabase response - error:', error);
 
         if (error) {
-            console.error('Group sync error details:', error);
+            console.error('❌ Group sync error details:', error);
+            console.error('Error code:', error.code);
+            console.error('Error message:', error.message);
+            console.error('Error details:', error.details);
+            console.error('Error hint:', error.hint);
+            console.error('Group record that failed:', groupRecord);
             throw error;
         }
 
-        console.log('Group synced successfully:', data);
+        if (!data) {
+            throw new Error('Group sync returned no data');
+        }
+
+        console.log('✅ Group synced successfully:', data);
         return data;
     } catch (error) {
-        console.error('Failed to sync group:', error);
+        console.error('❌ Failed to sync group:', error);
         console.error('Error details:', {
             message: error.message,
             code: error.code,
             details: error.details,
             hint: error.hint
         });
-        return null;
+        // Re-throw the error so calling code knows it failed
+        throw error;
     }
 }
 
