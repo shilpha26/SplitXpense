@@ -582,9 +582,44 @@
                 const fetchedGroup = await window.fetchGroupFromDatabase(groupId);
 
                 if (!fetchedGroup) {
+                    // Check if this is a shared link (UUID format)
+                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                    const isSharedLink = uuidRegex.test(groupId);
+                    
+                    if (isSharedLink) {
+                        // This is a shared link - try to fetch directly from database
+                        // even if user isn't a member yet
+                        console.log('Detected shared link, attempting to fetch group directly...');
+                        try {
+                            // Try to fetch the group directly from Supabase without membership check
+                            const { data: directGroup, error: directError } = await window.supabaseClient
+                                .from('groups')
+                                .select('*')
+                                .eq('id', groupId)
+                                .maybeSingle();
+                            
+                            if (directGroup && !directError) {
+                                console.log('Group found via shared link, joining user...');
+                                // Group exists, join the user and then load it
+                                await joinGroupFromSharedLink(directGroup, groupId);
+                                // After joining, fetch again to get the complete group with expenses
+                                const joinedGroup = await window.fetchGroupFromDatabase(groupId);
+                                if (joinedGroup) {
+                                    currentGroup = joinedGroup;
+                                    window.currentGroup = joinedGroup;
+                                    updateGroupDisplay();
+                                    showNotification('Joined group successfully!', 'success');
+                                    return;
+                                }
+                            }
+                        } catch (shareError) {
+                            console.error('Error fetching shared link group:', shareError);
+                        }
+                    }
+                    
                     // Try localStorage cache as fallback
                     const groups = loadFromLocalStorage();
-                    const cachedGroup = groups.find(g => g.id === groupId);
+                    const cachedGroup = groups.find(g => g.id === groupId || g.supabaseId === groupId);
                     if (cachedGroup) {
                         currentGroup = cachedGroup;
                         window.currentGroup = cachedGroup;
@@ -592,7 +627,14 @@
                         showNotification('Using cached data. Please check your connection.', 'warning');
                         return;
                     }
-                    throw new Error('Group not found');
+                    
+                    // If it's a shared link, show a more helpful message
+                    if (isSharedLink) {
+                        showNotification('Group not found. The link may be invalid or the group was deleted.', 'error');
+                    } else {
+                        throw new Error('Group not found');
+                    }
+                    return;
                 }
 
                 // Cache in localStorage
@@ -1696,7 +1738,12 @@
 if ('serviceWorker' in navigator) {
   console.log('Registering service worker...');
 
-  navigator.serviceWorker.register('/sw.js')
+  // Detect base path for GitHub Pages subdirectory
+  const basePath = window.location.pathname.split('/').slice(0, -1).join('/') || '';
+  const swPath = basePath ? `${basePath}/sw.js` : '/sw.js';
+  console.log('Service worker path:', swPath);
+
+  navigator.serviceWorker.register(swPath)
     .then(registration => {
       console.log('Service worker registered:', registration);
 

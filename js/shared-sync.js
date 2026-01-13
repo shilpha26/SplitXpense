@@ -657,14 +657,20 @@ async function fetchGroupFromDatabase(groupId) {
         const groupSchema = SCHEMA_MAPPING.groups;
 
         // Fetch group with schema-aware column names
+        // Use .maybeSingle() instead of .single() to handle missing groups gracefully
         const { data: group, error: groupError } = await window.supabaseClient
             .from('groups')
             .select('*')
             .eq(groupSchema.id, groupId)
-            .single();
+            .maybeSingle();
 
         if (groupError) {
             console.error('Group fetch error:', groupError);
+            // If it's a "not found" error, return null instead of throwing
+            if (groupError.code === 'PGRST116' || groupError.message?.includes('0 rows')) {
+                console.warn('Group not found in database:', groupId);
+                return null;
+            }
             throw groupError;
         }
 

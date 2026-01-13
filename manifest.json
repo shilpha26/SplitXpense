@@ -1,44 +1,44 @@
 {
   "name": "SplitEasy - Expense Splitter",
   "short_name": "SplitEasy",
-  "start_url": "/SplitEasy/",
-  "scope": "/SplitEasy/",
+  "start_url": "/SplitEasy-Supabase/",
+  "scope": "/SplitEasy-Supabase/",
   "display": "standalone",
   "background_color": "#f8f9fa",
   "theme_color": "#28a745",
   "icons": [
     {
-      "src": "/SplitEasy/icons/icon-192x192.png",
+      "src": "/SplitEasy-Supabase/icons/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/SplitEasy/icons/icon-192x192.png",
+      "src": "/SplitEasy-Supabase/icons/icon-192x192.png",
       "sizes": "192x192", 
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/SplitEasy/icons/icon-512x512.png",
+      "src": "/SplitEasy-Supabase/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/SplitEasy/icons/icon-512x512.png",
+      "src": "/SplitEasy-Supabase/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png", 
       "purpose": "maskable"
     },
     {
-      "src": "/SplitEasy/icons/icon-1024x1024.png",
+      "src": "/SplitEasy-Supabase/icons/icon-1024x1024.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/SplitEasy/icons/icon-1024x1024.png",
+      "src": "/SplitEasy-Supabase/icons/icon-1024x1024.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

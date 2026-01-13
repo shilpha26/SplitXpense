@@ -1,5 +1,5 @@
 // Force cache update by incrementing version
-const CACHE_VERSION = 'spliteasy-v1768229000000'; // GitHub Pages cache fix - force refresh
+const CACHE_VERSION = 'spliteasy-v1768230000000'; // Fixed cache.addAll to individual cache.add calls
 const CACHE_NAME = CACHE_VERSION;
 
 console.log('🔄 SplitEasy Service Worker Loading with cache:', CACHE_NAME);
@@ -22,12 +22,12 @@ const BASE_PATH = getBasePath();
 console.log('🔄 Service Worker Base Path:', BASE_PATH || '(root)');
 
 // Updated file list with your new enhanced files (relative to base path)
+// Only cache files that exist - use cache.add() individually to handle failures gracefully
 const urlsToCache = [
   BASE_PATH || '/',
   BASE_PATH + '/index.html',
   BASE_PATH + '/group-detail.html',
   BASE_PATH + '/css/style.css',
-  BASE_PATH + '/js/script.js',
   BASE_PATH + '/js/shared-utils.js',
   BASE_PATH + '/js/shared-supabase.js',
   BASE_PATH + '/js/shared-sync.js',
@@ -46,11 +46,16 @@ self.addEventListener('install', event => {
 
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
+      .then(async cache => {
         console.log('📦 SplitEasy: Caching app shell');
-        return cache.addAll(urlsToCache);
-      })
-      .then(() => {
+        // Cache files individually to handle failures gracefully
+        const cachePromises = urlsToCache.map(url => 
+          cache.add(url).catch(err => {
+            console.warn(`⚠️ Failed to cache ${url}:`, err.message);
+            return null; // Continue even if one file fails
+          })
+        );
+        await Promise.all(cachePromises);
         console.log('✅ SplitEasy: App shell cached successfully');
       })
       .catch(error => {
