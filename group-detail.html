@@ -92,7 +92,6 @@
             <div id="expensesTabContent" class="tab-content">
                 <div class="section-header">
                     <h3>Expenses</h3>
-                    <button class="btn-success" onclick="showAddExpenseModal()">Add Expense</button>
                 </div>
                 <div id="detailsExpensesList" class="expenses-list">
                     <!-- Expenses will be loaded here -->
@@ -486,8 +485,7 @@
                     // Don't redirect immediately - might be a shared link
                 }
             } else {
-                console.warn('No user session found - will create guest user if needed');
-                // Don't create user yet - wait to see if group is in localStorage
+                console.warn('No user session found - will redirect to signup if accessing shared link');
             }
 
             // Get group ID from URL with enhanced debugging
@@ -503,6 +501,18 @@
                 console.log('Group ID found, proceeding with load...');
                 window.currentGroupId = groupId;
                 currentGroupId = groupId;
+
+                // If accessing via shared link and no user, redirect to signup first
+                // Check this BEFORE trying to load the group
+                if (!window.currentUser) {
+                    console.log('No user logged in, redirecting to signup/login...');
+                    const returnUrl = encodeURIComponent(window.location.href);
+                    showNotification('Please sign up or log in to access this group', 'info');
+                    setTimeout(() => {
+                        window.location.href = `index.html?returnTo=${returnUrl}`;
+                    }, 500);
+                    return;
+                }
 
                 loadGroupData(groupId);
             } else {
@@ -534,10 +544,21 @@
         async function loadGroupData(groupId) {
             console.log('Loading group data for ID:', groupId);
 
+            // Check if user is logged in (required for accessing groups)
+            if (!window.currentUser) {
+                console.log('No user logged in, redirecting to signup/login...');
+                const returnUrl = encodeURIComponent(window.location.href);
+                showNotification('Please sign up or log in to access this group', 'info');
+                setTimeout(() => {
+                    window.location.href = `index.html?returnTo=${returnUrl}`;
+                }, 500);
+                return;
+            }
+
             // REQUIRED: Load from Supabase first
             if (!window.supabaseClient) {
                 showNotification('Supabase not available. Please check your connection.', 'error');
-                // Fallback to localStorage cache
+                // Fallback to localStorage cache (only if user is logged in)
                 const groups = loadFromLocalStorage();
                 const foundGroup = groups.find(g => g.id === groupId);
                 if (foundGroup) {
@@ -554,8 +575,6 @@
             }
 
             try {
-                showNotification('Loading group from cloud...', 'info');
-                
                 if (typeof window.fetchGroupFromDatabase !== 'function') {
                     throw new Error('fetchGroupFromDatabase function not available');
                 }
@@ -615,23 +634,15 @@
 
             // Group not found locally - try to fetch from database
             console.log('Group not found locally, checking database...');
-            showNotification('Loading group from link...', 'info');
-
-            // Auto-create guest user if no user exists
+            
+            // If no user is logged in, redirect to signup/login
             if (!window.currentUser) {
-                console.log('No user found, creating guest user for shared link access...');
-                const guestUserId = 'guest_' + Date.now();
-                const guestUser = {
-                    id: guestUserId,
-                    name: 'Guest',
-                    createdAt: new Date().toISOString(),
-                    isGuest: true
-                };
-                localStorage.setItem('spliteasy_current_user', JSON.stringify(guestUser));
-                window.currentUser = guestUser;
-                console.log('Guest user created:', guestUserId);
+                console.log('No user logged in, redirecting to signup/login...');
+                const returnUrl = encodeURIComponent(window.location.href);
+                window.location.href = `index.html?returnTo=${returnUrl}`;
+                return;
             }
-
+            
             try {
                 // Check if Supabase is available
                 if (!window.supabaseClient) {
@@ -662,54 +673,9 @@
                     return;
                 }
 
-                // Ask user if they want to join the group
-                const joinConfirm = confirm(
-                    `Do you want to join the group "${fetchedGroup.name}"?\n\n` +
-                    `Members: ${fetchedGroup.members.join(', ')}\n` +
-                    `Expenses: ${fetchedGroup.expenses?.length || 0}\n` +
-                    `Total: ${formatCurrency(fetchedGroup.totalExpenses || 0)}\n\n` +
-                    `Click OK to join, or Cancel to view only.`
-                );
-
-                if (!joinConfirm) {
-                    // Allow viewing without joining
-                    console.log('User chose to view without joining');
-                    currentGroup = fetchedGroup;
-                    window.currentGroup = fetchedGroup;
-                    updateGroupDisplay();
-                    showNotification('Viewing group (read-only). Join to edit.', 'info');
-                    return;
-                }
-
-                // Join user to group in database (only if not guest)
-                if (!window.currentUser.isGuest && typeof window.joinUserToGroup === 'function') {
-                    const joined = await window.joinUserToGroup(groupId, window.currentUser.id);
-                    if (!joined) {
-                        console.warn('Failed to join group in database, but continuing with local access');
-                    }
-                }
-
-                // Add user to local group data
-                if (!fetchedGroup.members.includes(window.currentUser.id)) {
-                    fetchedGroup.members.push(window.currentUser.id);
-                }
-
-                // CRITICAL: Save group locally with proper structure
-                const localGroups = loadFromLocalStorage();
-                const existingIndex = localGroups.findIndex(g => g.id === groupId);
-                if (existingIndex >= 0) {
-                    localGroups[existingIndex] = fetchedGroup;
-                } else {
-                    localGroups.push(fetchedGroup);
-                }
-                saveGroupsToLocalStorage(localGroups);
-
-                // Set as current group
-                currentGroup = fetchedGroup;
-                window.currentGroup = fetchedGroup;
-                updateGroupDisplay();
-
-                showNotification(`Successfully joined "${fetchedGroup.name}"!`, 'success');
+                // User is logged in, automatically join the group
+                console.log('User logged in, automatically joining group:', fetchedGroup.name);
+                await joinGroupFromSharedLink(fetchedGroup, groupId);
 
             } catch (error) {
                 console.error('Failed to load group from share link:', error);
@@ -1137,6 +1103,13 @@
                 return;
             }
 
+            // Check if user is logged in
+            if (!window.currentUser) {
+                showNotification('Please log in to add expenses', 'error');
+                window.location.href = 'index.html';
+                return;
+            }
+
             const newExpense = {
                 id: generateId(),
                 name: description,
@@ -1164,6 +1137,24 @@
             console.log('New total expenses:', formatCurrency(currentGroup.totalExpenses));
 
             try {
+                // Ensure user is set before syncing
+                if (!window.currentUser) {
+                    const userData = localStorage.getItem('spliteasy_current_user');
+                    if (userData) {
+                        window.currentUser = JSON.parse(userData);
+                    } else {
+                        // Create guest user if none exists
+                        const guestUserId = 'guest_' + Date.now();
+                        window.currentUser = {
+                            id: guestUserId,
+                            name: 'Guest',
+                            createdAt: new Date().toISOString(),
+                            isGuest: true
+                        };
+                        localStorage.setItem('spliteasy_current_user', JSON.stringify(window.currentUser));
+                    }
+                }
+
                 // REQUIRED: Save to Supabase first
                 if (!window.supabaseClient) {
                     throw new Error('Supabase client not available');
@@ -1264,8 +1255,12 @@
                 const oldAmount = parseFloat(currentGroup.expenses[expenseIndex].amount);
                 const newAmount = parseFloat(amount);
 
+                // Preserve the expense ID and supabaseId to ensure update, not create
+                const existingExpense = currentGroup.expenses[expenseIndex];
                 currentGroup.expenses[expenseIndex] = {
-                    ...currentGroup.expenses[expenseIndex],
+                    ...existingExpense,
+                    id: existingExpense.id, // Preserve original ID
+                    supabaseId: existingExpense.supabaseId || existingExpense.id, // Preserve supabaseId or use id
                     name: description,
                     amount: newAmount,
                     paidBy: paidBy,
@@ -1378,8 +1373,92 @@
             if (modal) modal.style.display = 'none';
         }
 
+        // ========================================
+        // SHARED LINK ACCESS FUNCTIONS
+        // ========================================
+
+        async function joinGroupFromSharedLink(fetchedGroup, groupId) {
+            // Add user to local group data first
+            // Check if members array contains IDs or names
+            const members = fetchedGroup.members || [];
+            const userId = window.currentUser.id;
+            const userName = window.currentUser.name;
+            
+            // Check if user is already a member (by ID or name)
+            const isAlreadyMember = members.includes(userId) || 
+                                   members.includes(userName) ||
+                                   members.some(m => m && String(m).toLowerCase() === String(userId).toLowerCase()) ||
+                                   members.some(m => m && String(m).toLowerCase() === String(userName).toLowerCase());
+            
+            if (!isAlreadyMember) {
+                // Determine if members array uses IDs or names
+                // If members are all user IDs (contain 'user' or are long strings), add ID
+                // Otherwise, add name
+                const usesIds = members.length > 0 && members.some(m => String(m).length > 10 || String(m).includes('user'));
+                if (usesIds) {
+                    fetchedGroup.members.push(userId);
+                    console.log('Added user ID to members:', userId);
+                } else {
+                    fetchedGroup.members.push(userName);
+                    console.log('Added user name to members:', userName);
+                }
+            }
+
+            // Join user to group in database
+            if (typeof window.joinUserToGroup === 'function') {
+                const joined = await window.joinUserToGroup(groupId, window.currentUser.id);
+                if (!joined) {
+                    console.warn('Failed to join group in database, but continuing with local access');
+                } else {
+                    console.log('User successfully added to group in database');
+                    // After joining, sync the entire group to ensure consistency
+                    if (typeof window.syncGroupToDatabase === 'function') {
+                        try {
+                            await window.syncGroupToDatabase(fetchedGroup);
+                            console.log('Group synced to database after user joined');
+                        } catch (syncError) {
+                            console.warn('Failed to sync group after join:', syncError);
+                        }
+                    }
+                }
+            }
+
+            // CRITICAL: Save group locally with proper structure
+            const localGroups = loadFromLocalStorage();
+            const existingIndex = localGroups.findIndex(g => g.id === groupId);
+            if (existingIndex >= 0) {
+                localGroups[existingIndex] = fetchedGroup;
+            } else {
+                localGroups.push(fetchedGroup);
+            }
+            saveGroupsToLocalStorage(localGroups);
+
+            // Set as current group
+            currentGroup = fetchedGroup;
+            window.currentGroup = fetchedGroup;
+            updateGroupDisplay();
+
+            // Start real-time sync for this group
+            if (typeof window.startRealtimeSync === 'function') {
+                setTimeout(() => {
+                    window.startRealtimeSync();
+                    console.log('Real-time sync started after joining group');
+                }, 1000);
+            }
+
+            showNotification(`Successfully joined "${fetchedGroup.name}"!`, 'success');
+        }
+
+
         // FIXED: Edit Group function with proper error handling
         function handleEditGroup() {
+            // Check if user is logged in
+            if (!window.currentUser) {
+                showNotification('Please log in to edit group', 'error');
+                window.location.href = 'index.html';
+                return;
+            }
+            
             console.log('Edit button clicked');
             console.log('Current group:', window.currentGroup || currentGroup);
 

@@ -70,48 +70,44 @@ async function detectDatabaseSchema() {
 
     schemaDetectionPromise = (async () => {
         try {
-            // Try different column name variations for users table
+            // Since we know the database uses snake_case, test only those
+            // Skip camelCase tests to avoid 400 errors
             const testQueries = [
-                // Test createdat vs created_at
-                { table: 'users', column: 'createdat', mapping: 'createdAt' },
+                // Test users table - only snake_case
                 { table: 'users', column: 'created_at', mapping: 'createdAt' },
-                { table: 'users', column: 'updatedat', mapping: 'updatedAt' },
                 { table: 'users', column: 'updated_at', mapping: 'updatedAt' },
 
-                // Test groups table
-                { table: 'groups', column: 'createdby', mapping: 'createdBy' },
+                // Test groups table - only snake_case
                 { table: 'groups', column: 'created_by', mapping: 'createdBy' },
-                { table: 'groups', column: 'createdat', mapping: 'createdAt' },
                 { table: 'groups', column: 'created_at', mapping: 'createdAt' },
                 { table: 'groups', column: 'members', mapping: 'members' },
                 { table: 'groups', column: 'updated_by', mapping: 'updatedBy' },
                 { table: 'groups', column: 'updated_at', mapping: 'updatedAt' },
 
-                // Test expenses table  
-                { table: 'expenses', column: 'groupid', mapping: 'groupId' },
+                // Test expenses table - only snake_case
                 { table: 'expenses', column: 'group_id', mapping: 'groupId' },
-                { table: 'expenses', column: 'paidby', mapping: 'paidBy' },
                 { table: 'expenses', column: 'paid_by', mapping: 'paidBy' }
             ];
 
-            // Run queries in parallel for better performance
-            const queryPromises = testQueries.map(async (test) => {
+            // Test all columns in parallel for faster detection (snake_case only - no camelCase to avoid 400 errors)
+            await Promise.all(testQueries.map(async (test) => {
                 try {
                     const { error } = await window.supabaseClient
                         .from(test.table)
                         .select(test.column)
-                        .limit(1);
+                        .limit(0); // Use limit 0 to avoid fetching data, just test column existence
 
                     if (!error) {
                         SCHEMA_MAPPING[test.table][test.mapping] = test.column;
                         console.log(`Schema detected: ${test.table}.${test.mapping} = ${test.column}`);
                     }
                 } catch (e) {
-                    // Column doesn't exist, try next variation
+                    // Column doesn't exist - log only if it's unexpected
+                    if (e?.code !== 'PGRST204' && e?.status !== 400) {
+                        console.warn(`Schema test failed for ${test.table}.${test.column}:`, e.message);
+                    }
                 }
-            });
-
-            await Promise.all(queryPromises);
+            }));
 
             window.splitEasySync.schemaChecked = true;
             console.log('Database schema detection complete');
@@ -303,8 +299,28 @@ async function syncGroupToDatabase(group) {
 
 // FIXED: Schema-aware expense sync
 async function syncExpenseToDatabase(expense, groupId) {
-    if (window.splitEasySync.isOffline || !window.supabaseClient || !window.currentUser) {
-        console.log('Skipping expense sync - offline, no client, or no user');
+    // Check if we have the necessary components
+    if (window.splitEasySync.isOffline || !window.supabaseClient) {
+        console.log('Skipping expense sync - offline or no client');
+        return null;
+    }
+    
+    // Ensure currentUser is set (check localStorage if not)
+    if (!window.currentUser) {
+        const userData = localStorage.getItem('spliteasy_current_user');
+        if (userData) {
+            try {
+                window.currentUser = JSON.parse(userData);
+                console.log('Restored user from localStorage for expense sync:', window.currentUser.id);
+            } catch (e) {
+                console.warn('Failed to parse user data from localStorage');
+            }
+        }
+    }
+    
+    // If still no user, cannot sync expense
+    if (!window.currentUser) {
+        console.log('Skipping expense sync - no user logged in');
         return null;
     }
 
@@ -325,19 +341,54 @@ async function syncExpenseToDatabase(expense, groupId) {
             });
         }
         
-        const supabaseExpenseId = expense.supabaseId || generateUUID();
+        // UUID regex pattern (declare once at function level)
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        
+        // Use existing ID if available (for updates), otherwise generate new UUID (for creates)
+        // Check both supabaseId and id fields
+        let supabaseExpenseId = expense.supabaseId || expense.id;
+        
+        // If the ID is a UUID format, use it; otherwise generate a new one
+        if (!supabaseExpenseId || !uuidRegex.test(supabaseExpenseId)) {
+            // Generate new UUID only if we don't have a valid UUID
+            supabaseExpenseId = generateUUID();
+        }
+        
+        // Store the supabaseId for future updates
         if (!expense.supabaseId) {
             expense.supabaseId = supabaseExpenseId;
         }
         
         // Get group's Supabase ID (UUID) if available
+        // Priority: 1) currentGroup.supabaseId, 2) check if groupId is already UUID, 3) lookup in groups array
         let supabaseGroupId = groupId;
-        if (window.groups && Array.isArray(window.groups)) {
+        
+        // First check currentGroup (most reliable)
+        if (window.currentGroup) {
+            if (window.currentGroup.supabaseId) {
+                supabaseGroupId = window.currentGroup.supabaseId;
+            } else if (window.currentGroup.id === groupId) {
+                // If currentGroup.id matches and is a UUID, use it
+                if (uuidRegex.test(groupId)) {
+                    supabaseGroupId = groupId;
+                }
+            }
+        }
+        
+        // Fallback: check if groupId is already a UUID
+        if (uuidRegex.test(groupId)) {
+            supabaseGroupId = groupId;
+        }
+        
+        // Last resort: lookup in groups array
+        if (!uuidRegex.test(supabaseGroupId) && window.groups && Array.isArray(window.groups)) {
             const group = window.groups.find(g => g.id === groupId || g.supabaseId === groupId);
             if (group && group.supabaseId) {
                 supabaseGroupId = group.supabaseId;
             }
         }
+        
+        console.log('Using supabaseGroupId for expense:', supabaseGroupId, 'from groupId:', groupId);
         
         // Build expense record with all available columns
         const expenseRecord = {
@@ -355,9 +406,12 @@ async function syncExpenseToDatabase(expense, groupId) {
 
         console.log('Expense record structure:', expenseRecord);
 
+        // Use upsert with onConflict to ensure updates work correctly
         const { data, error } = await window.supabaseClient
             .from('expenses')
-            .upsert(expenseRecord)
+            .upsert(expenseRecord, {
+                onConflict: expenseSchema.id || 'id'  // Use 'id' as the conflict column for updates
+            })
             .select()
             .single();
 
@@ -419,9 +473,12 @@ async function fetchAllGroupsFromDatabase() {
         // Filter groups where user is the creator OR a member
         const userGroups = groups.filter(group => {
             const createdBy = group[groupSchema.createdBy] || group.created_by;
-            const isCreator = createdBy === window.currentUser.id;
+            const userId = window.currentUser.id;
+            const userName = window.currentUser.name;
             
-            // Also check if user is in the members array
+            const isCreator = createdBy === userId;
+            
+            // Also check if user is in the members array (by ID or name)
             let isMember = false;
             const members = group[groupSchema.members] || group.members;
             if (members) {
@@ -435,8 +492,15 @@ async function fetchAllGroupsFromDatabase() {
                     }
                 }
                 if (Array.isArray(membersArray)) {
-                    isMember = membersArray.includes(window.currentUser.id) || 
-                               membersArray.some(m => m && m.toLowerCase() === window.currentUser.id.toLowerCase());
+                    // Check by ID
+                    isMember = membersArray.includes(userId) || 
+                               membersArray.some(m => m && String(m).toLowerCase() === String(userId).toLowerCase());
+                    
+                    // Also check by name (in case members array stores names instead of IDs)
+                    if (!isMember && userName) {
+                        isMember = membersArray.includes(userName) ||
+                                  membersArray.some(m => m && String(m).toLowerCase() === String(userName).toLowerCase());
+                    }
                 }
             }
             
@@ -445,19 +509,42 @@ async function fetchAllGroupsFromDatabase() {
 
         console.log('User is a member of', userGroups.length, 'groups (filtered by created_by or members array)');
 
-        // Fetch expenses for each group
-        const expenseSchema = SCHEMA_MAPPING.expenses;
-        const completeGroups = await Promise.all(userGroups.map(async (group) => {
-            try {
-                const { data: expenses, error: expensesError } = await window.supabaseClient
-                    .from('expenses')
-                    .select('*')
-                    .eq(expenseSchema.groupId, group[groupSchema.id] || group.id)
-                    .order(expenseSchema.createdAt || 'created_at', { ascending: false });
+        if (userGroups.length === 0) {
+            return [];
+        }
 
-                if (expensesError) {
-                    console.warn('Failed to fetch expenses for group', group[groupSchema.id], ':', expensesError);
+        // OPTIMIZATION: Fetch all expenses for all user groups in one query instead of N queries
+        const expenseSchema = SCHEMA_MAPPING.expenses;
+        const groupIds = userGroups.map(g => g[groupSchema.id] || g.id);
+        
+        // Fetch all expenses for all groups at once
+        const { data: allExpenses, error: expensesError } = await window.supabaseClient
+            .from('expenses')
+            .select('*')
+            .in(expenseSchema.groupId, groupIds)
+            .order(expenseSchema.createdAt || 'created_at', { ascending: false });
+
+        if (expensesError) {
+            console.warn('Failed to fetch expenses:', expensesError);
+        }
+
+        // Group expenses by groupId for faster lookup
+        const expensesByGroupId = new Map();
+        if (allExpenses && Array.isArray(allExpenses)) {
+            allExpenses.forEach(expense => {
+                const groupId = expense[expenseSchema.groupId] || expense.group_id;
+                if (!expensesByGroupId.has(groupId)) {
+                    expensesByGroupId.set(groupId, []);
                 }
+                expensesByGroupId.get(groupId).push(expense);
+            });
+        }
+
+        // Process groups with their expenses (synchronously now since expenses are already fetched)
+        const completeGroups = userGroups.map((group) => {
+            try {
+                const groupId = group[groupSchema.id] || group.id;
+                const expenses = expensesByGroupId.get(groupId) || [];
 
                 // Structure the group data properly
                 // Derive members from stored members OR from expenses (fallback)
@@ -950,19 +1037,31 @@ async function joinUserToGroup(groupId, userId) {
             return false;
         }
 
-        // Get current members
-        const currentMembers = group[groupSchema.participants] || group.participants || [];
+        // Get current members (handle JSONB array)
+        let currentMembers = group[groupSchema.members] || group.members || [];
+        if (typeof currentMembers === 'string') {
+            try {
+                currentMembers = JSON.parse(currentMembers);
+            } catch (e) {
+                console.warn('Failed to parse members JSON:', e);
+                currentMembers = [];
+            }
+        }
+        if (!Array.isArray(currentMembers)) {
+            currentMembers = [];
+        }
         
         // Add user if not already a member
         if (!currentMembers.includes(userId)) {
             const updatedMembers = [...currentMembers, userId];
 
-            // Update group with new member
+            // Update group with new member (store as JSONB array)
             const { error: updateError } = await window.supabaseClient
                 .from('groups')
                 .update({
-                    [groupSchema.participants]: updatedMembers,
-                    [groupSchema.updatedAt]: new Date().toISOString()
+                    [groupSchema.members]: updatedMembers,
+                    [groupSchema.updatedAt]: new Date().toISOString(),
+                    [groupSchema.updatedBy]: userId
                 })
                 .eq(groupSchema.id, groupId);
 
@@ -1014,7 +1113,16 @@ window.startRealtimeSync = function() {
                     // Check if user is a member of this group
                     const groupData = payload.new || payload.old;
                     const groupSchema = SCHEMA_MAPPING.groups;
-                    const members = groupData?.[groupSchema.participants] || groupData?.participants || [];
+                    let members = groupData?.[groupSchema.members] || groupData?.members || [];
+                    // Handle JSONB array (might be string or array)
+                    if (typeof members === 'string') {
+                        try {
+                            members = JSON.parse(members);
+                        } catch (e) {
+                            console.warn('Failed to parse members JSON in real-time update:', e);
+                            members = [];
+                        }
+                    }
                     if (Array.isArray(members) && members.includes(window.currentUser.id)) {
                         await handleGroupChange(payload);
                     }
@@ -1101,25 +1209,47 @@ async function handleExpenseChange(payload) {
     try {
         const { eventType, new: newData, old: oldData } = payload;
         const expenseSchema = SCHEMA_MAPPING.expenses;
-        const groupId = newData?.[expenseSchema.groupId] || newData?.group_id || oldData?.[expenseSchema.groupId] || oldData?.group_id;
+        const expenseGroupId = newData?.[expenseSchema.groupId] || newData?.group_id || oldData?.[expenseSchema.groupId] || oldData?.group_id;
 
-        if (!groupId) return;
+        if (!expenseGroupId) return;
 
-        // Only update if this expense belongs to a group we're viewing
-        if (window.currentGroupId === groupId || (window.currentGroup && window.currentGroup.id === groupId)) {
-            console.log('Reloading expenses due to real-time update');
+        // Check if this expense belongs to the current group
+        // The expense's group_id is a UUID (supabaseId), so we need to compare with:
+        // 1. currentGroup.supabaseId (UUID)
+        // 2. currentGroup.id (if it's a UUID)
+        // 3. window.currentGroupId (if it's a UUID)
+        let isCurrentGroup = false;
+        if (window.currentGroup) {
+            const currentGroupSupabaseId = window.currentGroup.supabaseId || 
+                                          (window.currentGroup.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(window.currentGroup.id) ? window.currentGroup.id : null);
+            isCurrentGroup = currentGroupSupabaseId === expenseGroupId || 
+                            window.currentGroup.id === expenseGroupId;
+        } else if (window.currentGroupId) {
+            // Check if currentGroupId is a UUID or matches
+            isCurrentGroup = window.currentGroupId === expenseGroupId ||
+                            (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(window.currentGroupId) && window.currentGroupId === expenseGroupId);
+        }
 
-            // Fetch updated group from database
+        if (isCurrentGroup) {
+            console.log('Reloading expenses due to real-time update for group:', expenseGroupId);
+
+            // Fetch updated group from database using the expense's group_id (UUID)
             if (typeof fetchGroupFromDatabase === 'function') {
-                const updatedGroup = await fetchGroupFromDatabase(groupId);
+                const updatedGroup = await fetchGroupFromDatabase(expenseGroupId);
                 if (updatedGroup && window.currentGroup) {
                     // Update expenses
-                    window.currentGroup.expenses = updatedGroup.expenses;
-                    window.currentGroup.totalExpenses = updatedGroup.totalExpenses;
+                    window.currentGroup.expenses = updatedGroup.expenses || [];
+                    window.currentGroup.totalExpenses = updatedGroup.totalExpenses || 0;
 
                     // Update local storage
                     const localGroups = loadFromLocalStorageSafe();
-                    const groupIndex = localGroups.findIndex(g => g.id === groupId);
+                    // Find group by either supabaseId or id
+                    const groupIndex = localGroups.findIndex(g => 
+                        g.supabaseId === expenseGroupId || 
+                        g.id === expenseGroupId ||
+                        (g.supabaseId && g.supabaseId === window.currentGroup.supabaseId) ||
+                        (g.id === window.currentGroup.id)
+                    );
                     if (groupIndex !== -1) {
                         localGroups[groupIndex] = window.currentGroup;
                         saveGroupsToLocalStorageSafe(localGroups);

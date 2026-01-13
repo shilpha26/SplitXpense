@@ -1,5 +1,5 @@
 // Force cache update by incrementing version
-const CACHE_VERSION = 'spliteasy-v1768223000000'; // Removed sync notifications for cleaner UI
+const CACHE_VERSION = 'spliteasy-v1768225000000'; // Fixed uuidRegex duplicate declaration
 const CACHE_NAME = CACHE_VERSION;
 
 console.log('🔄 SplitEasy Service Worker Loading with cache:', CACHE_NAME);

@@ -232,6 +232,14 @@
                 return;
             }
 
+            // Check for return URL (from shared link)
+            const urlParams = new URLSearchParams(window.location.search);
+            const returnTo = urlParams.get('returnTo');
+            if (returnTo) {
+                // Store return URL for after signup
+                sessionStorage.setItem('returnToAfterSignup', returnTo);
+            }
+
             // Check for existing user
             const userData = localStorage.getItem('spliteasy_current_user');
             const previousUsers = getPreviousUsers();
@@ -241,6 +249,13 @@
                 document.getElementById('currentUserName').textContent = window.currentUser.name;
                 await loadGroups();
                 showMainContent();
+                
+                // If there's a return URL, redirect after a moment
+                if (returnTo) {
+                    setTimeout(() => {
+                        window.location.href = decodeURIComponent(returnTo);
+                    }, 1000);
+                }
             } else if (previousUsers.length > 0) {
                 showUserLoginModal(true); // Show with previous users
             } else {
@@ -471,12 +486,17 @@
             };
 
             try {
-                // Try to create user in database if available
+                // Try to create user in database if available (optional - app works without users table)
                 if (typeof window.createUserInDatabase === 'function' && window.supabaseClient) {
-                    await window.createUserInDatabase(userId, userName);
+                    try {
+                        await window.createUserInDatabase(userId, userName);
+                    } catch (dbError) {
+                        // If users table doesn't exist, that's okay - continue with local storage
+                        console.log('User creation in database skipped (table may not exist)');
+                    }
                 }
 
-                // Store user data
+                // Store user data locally (always works)
                 localStorage.setItem('spliteasy_current_user', JSON.stringify(userData));
                 storePreviousUser(userData);
 
@@ -493,10 +513,26 @@
                 }
 
                 showNotification(`Welcome, ${userName}!`);
+                
+                // Check if there's a return URL (from shared link)
+                const returnTo = sessionStorage.getItem('returnToAfterSignup') || urlParams.get('returnTo');
+                if (returnTo) {
+                    sessionStorage.removeItem('returnToAfterSignup');
+                    setTimeout(() => {
+                        window.location.href = decodeURIComponent(returnTo);
+                    }, 1500);
+                }
 
             } catch (error) {
                 console.error('User creation failed:', error);
-                showNotification('Failed to create user. Please try again.', 'error');
+                // Even if database creation fails, continue with local storage
+                localStorage.setItem('spliteasy_current_user', JSON.stringify(userData));
+                storePreviousUser(userData);
+                window.currentUser = userData;
+                document.getElementById('currentUserName').textContent = userName;
+                showMainContent();
+                await loadGroups();
+                showNotification(`Welcome, ${userName}! (offline mode)`);
             }
         }
 
@@ -711,8 +747,6 @@
 
         async function loadGroups() {
             try {
-                showNotification('Loading groups from cloud...', 'info');
-                
                 // REQUIRED: Load from Supabase first
                 if (!window.supabaseClient) {
                     throw new Error('Supabase client not available');
@@ -725,18 +759,66 @@
                     return;
                 }
 
-                // Fetch groups from Supabase
+                // Show cached groups immediately for faster UI
+                const cachedGroups = loadFromLocalStorage();
+                if (cachedGroups.length > 0) {
+                    window.groups = cachedGroups;
+                    displayGroups(); // Show cached groups immediately
+                }
+
+                // Fetch groups from Supabase in background
                 if (typeof window.fetchAllGroupsFromDatabase === 'function') {
-                    const groups = await window.fetchAllGroupsFromDatabase();
-                    window.groups = groups || [];
+                    const dbGroups = await window.fetchAllGroupsFromDatabase();
                     
-                    // Cache in localStorage for offline access
+                    // Also check localStorage for any groups that might not be in database yet
+                    // (e.g., newly joined groups via shared link)
+                    const localGroups = cachedGroups || loadFromLocalStorage();
+                    
+                    // Merge: combine database groups with local groups, avoiding duplicates
+                    const mergedGroups = [...(dbGroups || [])];
+                    const dbGroupIds = new Set(mergedGroups.map(g => g.id));
+                    
+                    // Add local groups that aren't in database (e.g., newly joined groups)
+                    localGroups.forEach(localGroup => {
+                        if (!dbGroupIds.has(localGroup.id)) {
+                            // Check if user is a member of this local group
+                            const members = localGroup.members || [];
+                            const userId = window.currentUser.id;
+                            const userName = window.currentUser.name;
+                            
+                            // Check membership - handle both IDs and names
+                            // Members array might contain IDs or names, so check both
+                            const isMemberById = members.includes(userId) || 
+                                               members.some(m => m && String(m).toLowerCase() === String(userId).toLowerCase());
+                            
+                            // Also check by name (in case members array stores names instead of IDs)
+                            const isMemberByName = members.includes(userName) ||
+                                                  members.some(m => m && String(m).toLowerCase() === String(userName).toLowerCase());
+                            
+                            const isMember = isMemberById || isMemberByName;
+                            
+                            // Also check if user is the creator
+                            const isCreator = localGroup.createdBy === userId || localGroup.created_by === userId;
+                            
+                            if (isMember || isCreator) {
+                                mergedGroups.push(localGroup);
+                                console.log('✅ Adding local group to list:', localGroup.name, 'User:', userId, 'Members:', members);
+                            } else {
+                                console.log('❌ Skipping local group (user not a member):', localGroup.name, 'User:', userId, 'Name:', userName, 'Members:', members, 'CreatedBy:', localGroup.createdBy || localGroup.created_by);
+                            }
+                        } else {
+                            console.log('ℹ️ Local group already in DB:', localGroup.name);
+                        }
+                    });
+                    
+                    window.groups = mergedGroups;
+                    
+                    // Update localStorage with merged groups
                     if (window.groups.length > 0) {
                         localStorage.setItem('spliteasy_groups', JSON.stringify(window.groups));
                     }
                     
-                    console.log('Loaded', window.groups.length, 'groups from Supabase');
-                    showNotification(`Loaded ${window.groups.length} groups`, 'success');
+                    console.log('Loaded', window.groups.length, 'groups (', dbGroups?.length || 0, 'from DB,', localGroups.length, 'from local)');
                 } else {
                     throw new Error('fetchAllGroupsFromDatabase function not available');
                 }
@@ -863,6 +945,13 @@
         // GROUP MANAGEMENT FUNCTIONS
         // ========================================
         function showCreateGroupModal() {
+            // Check if user is logged in
+            if (!window.currentUser) {
+                showNotification('Please log in to create a group', 'error');
+                showUserLoginModal(false);
+                return;
+            }
+            
             document.getElementById('createGroupModal').style.display = 'block';
             document.getElementById('groupName').value = '';
             setupMemberSelection();
@@ -877,6 +966,14 @@
 
         function setupMemberSelection() {
             const grid = document.getElementById('memberSelectionGrid');
+            
+            // Check if user is logged in
+            if (!window.currentUser) {
+                console.warn('No user logged in, showing login modal');
+                showUserLoginModal(false);
+                return;
+            }
+            
             grid.innerHTML = `
                 <div class="selectable-box selected" data-member="${window.currentUser.name}">
                     ${window.currentUser.name}
@@ -891,6 +988,8 @@
         }
 
         function clearAllMembers() {
+            if (!window.currentUser) return;
+            
             document.querySelectorAll('#memberSelectionGrid .selectable-box').forEach(box => {
                 if (box.dataset.member !== window.currentUser.name) {
                     box.classList.remove('selected');
@@ -971,6 +1070,13 @@
 
             if (allMembers.length < 2) {
                 showNotification('Group must have at least two members', 'error');
+                return;
+            }
+
+            // Check if user is logged in
+            if (!window.currentUser) {
+                showNotification('Please log in to create a group', 'error');
+                showUserLoginModal(false);
                 return;
             }
 

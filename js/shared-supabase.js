@@ -126,9 +126,9 @@ async function testSupabaseConnection() {
     try {
         console.log('🧪 Testing Supabase connection...');
 
-        // Test with a simple query
+        // Test with groups table instead (more likely to exist)
         const { data, error } = await window.supabaseClient
-            .from('users')
+            .from('groups')
             .select('count')
             .limit(1);
 
@@ -165,13 +165,23 @@ window.checkUserIdExists = async function(userId) {
             .eq('id', userId)
             .single();
 
-        if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
+        // If table doesn't exist (404), return false but don't error
+        if (error) {
+            if (error.code === 'PGRST116' || error.message?.includes('not found') || error.message?.includes('404')) {
+                // User not found or table doesn't exist - both are fine
+                return false;
+            }
             console.warn('User ID check error:', error);
             return false;
         }
 
         return !!data;
     } catch (error) {
+        // If table doesn't exist, that's okay - users table is optional
+        if (error.message?.includes('not found') || error.message?.includes('404')) {
+            console.log('Users table not found - this is optional, continuing without it');
+            return false;
+        }
         console.warn('User ID check failed:', error);
         return false;
     }
@@ -190,19 +200,31 @@ window.createUserInDatabase = async function(userId, userName) {
             .insert({
                 id: userId,
                 name: userName,
-                createdat: new Date().toISOString(),
-                updatedat: new Date().toISOString()
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
             })
             .select()
             .single();
 
         if (error) {
+            // If users table doesn't exist, that's okay - it's optional
+            if (error.message?.includes('not found') || error.message?.includes('404') || error.code === 'PGRST204') {
+                console.log('⚠️ Users table not found - user will be stored locally only. This is fine!');
+                console.log('💡 To enable user sync, run the migration SQL in Supabase to create the users table.');
+                return null; // Return null instead of throwing - app can work without users table
+            }
             throw error;
         }
 
-        console.log('User created in database:', userName);
+        console.log('✅ User created in database:', userName);
         return data;
     } catch (error) {
+        // If table doesn't exist, log warning but don't fail
+        if (error.message?.includes('not found') || error.message?.includes('404') || error.code === 'PGRST204') {
+            console.log('⚠️ Users table not found - user will be stored locally only. This is fine!');
+            console.log('💡 To enable user sync, run the migration SQL in Supabase to create the users table.');
+            return null;
+        }
         console.error('Failed to create user:', error);
         throw error;
     }
