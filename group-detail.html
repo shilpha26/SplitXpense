@@ -2062,10 +2062,13 @@
                         console.log('Group and all expenses deleted from database');
                     }
 
-                    // Delete from local storage
-                    const groups = loadFromLocalStorage().filter(g => g.id !== currentGroupId && g.supabaseId !== currentGroupId);
+                    // Delete from local storage - check both id and supabaseId
+                    const groups = loadFromLocalStorage().filter(g => {
+                        // Keep groups that don't match currentGroupId by either id or supabaseId
+                        return (g.id !== currentGroupId) && (g.supabaseId !== currentGroupId);
+                    });
                     saveGroupsToLocalStorage(groups);
-                    console.log('Group removed from localStorage');
+                    console.log('Group removed from localStorage. Remaining groups:', groups.length);
 
                     showNotification('Group and all expenses deleted successfully!', 'success');
                     setTimeout(() => {
@@ -2075,8 +2078,13 @@
                     console.error('Failed to delete group:', error);
                     showNotification('Failed to delete group from cloud. Deleted locally only.', 'warning');
 
-                    const groups = loadFromLocalStorage().filter(g => g.id !== currentGroupId && g.supabaseId !== currentGroupId);
+                    // Delete from local storage - check both id and supabaseId
+                    const groups = loadFromLocalStorage().filter(g => {
+                        // Keep groups that don't match currentGroupId by either id or supabaseId
+                        return (g.id !== currentGroupId) && (g.supabaseId !== currentGroupId);
+                    });
                     saveGroupsToLocalStorage(groups);
+                    console.log('Group removed from localStorage (fallback). Remaining groups:', groups.length);
 
                     setTimeout(() => {
                         window.location.href = 'index.html';

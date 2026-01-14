@@ -8,6 +8,8 @@
     --success-hover: #059669;
     --danger-color: #ef4444;
     --danger-hover: #dc2626;
+    --warning-color: #f59e0b;
+    --warning-hover: #d97706;
     --secondary-color: #6b7280;
     --secondary-hover: #4b5563;
     --background: #f9fafb;
@@ -1235,6 +1237,11 @@ header .container .user-info {
     z-index: 1001;
     max-width: 350px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    background: var(--primary-color); /* Default background if type not specified */
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    transform: translateX(0);
 }
 
 .notification.success {
@@ -1247,6 +1254,10 @@ header .container .user-info {
 
 .notification.info {
     background: var(--primary-color);
+}
+
+.notification.warning {
+    background: var(--warning-color);
 }
 
 @media (max-width: 768px) {

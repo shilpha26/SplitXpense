@@ -789,11 +789,24 @@
                     
                     // Merge: combine database groups with local groups, avoiding duplicates
                     const mergedGroups = [...(dbGroups || [])];
-                    const dbGroupIds = new Set(mergedGroups.map(g => g.id));
+                    const dbGroupIds = new Set(mergedGroups.map(g => g.id || g.supabaseId));
+                    const dbGroupSupabaseIds = new Set(mergedGroups.map(g => g.supabaseId || g.id));
+                    
+                    // Track groups to remove from localStorage
+                    const groupsToRemove = [];
                     
                     // Add local groups that aren't in database (e.g., newly joined groups)
                     localGroups.forEach(localGroup => {
-                        if (!dbGroupIds.has(localGroup.id)) {
+                        const localGroupId = localGroup.id || localGroup.supabaseId;
+                        const localGroupSupabaseId = localGroup.supabaseId || localGroup.id;
+                        
+                        // Check if group exists in database (by id or supabaseId)
+                        const existsInDb = dbGroupIds.has(localGroupId) || 
+                                         dbGroupSupabaseIds.has(localGroupId) ||
+                                         dbGroupIds.has(localGroupSupabaseId) ||
+                                         dbGroupSupabaseIds.has(localGroupSupabaseId);
+                        
+                        if (!existsInDb) {
                             // Check if user is a member of this local group
                             const members = localGroup.members || [];
                             const userId = window.currentUser.id;
@@ -813,26 +826,48 @@
                             // Also check if user is the creator
                             const isCreator = localGroup.createdBy === userId || localGroup.created_by === userId;
                             
-                            // IMPORTANT: User sees group only if they are creator OR in members array
-                            // If removed from members, they won't see it (unless they're the creator)
-                            if (isMember || isCreator) {
+                            // IMPORTANT: If group doesn't exist in database, it was deleted
+                            // Even if user is creator, if group is not in DB, it means they deleted it
+                            // So we should remove it from localStorage
+                            if (isCreator) {
+                                // Creator deleted the group - remove from localStorage
+                                console.log('🗑️ Group deleted by creator, removing from localStorage:', localGroup.name);
+                                groupsToRemove.push(localGroup);
+                            } else if (isMember) {
+                                // User is a member but group not in DB - might be newly joined, add it
                                 mergedGroups.push(localGroup);
-                                console.log('✅ Adding local group to list:', localGroup.name, 'User:', userId, 'Members:', members);
+                                console.log('✅ Adding local group to list (not in DB but user is member):', localGroup.name, 'User:', userId, 'Members:', members);
                             } else {
-                                console.log('❌ Skipping local group (user not a member):', localGroup.name, 'User:', userId, 'Name:', userName, 'Members:', members, 'CreatedBy:', localGroup.createdBy || localGroup.created_by);
+                                console.log('❌ Skipping local group (user not a member and not in DB):', localGroup.name, 'User:', userId, 'Name:', userName, 'Members:', members, 'CreatedBy:', localGroup.createdBy || localGroup.created_by);
                                 
-                                // Also remove from localStorage if user is no longer a member
-                                const allLocalGroups = loadFromLocalStorage();
-                                const filteredGroups = allLocalGroups.filter(g => g.id !== localGroup.id && g.supabaseId !== localGroup.id);
-                                if (filteredGroups.length < allLocalGroups.length) {
-                                    saveGroupsToLocalStorage(filteredGroups);
-                                    console.log('Removed group from localStorage (user is no longer a member)');
-                                }
+                                // Mark for removal from localStorage
+                                groupsToRemove.push(localGroup);
                             }
                         } else {
                             console.log('ℹ️ Local group already in DB:', localGroup.name);
                         }
                     });
+                    
+                    // Remove groups from localStorage that don't exist in database or user is not a member
+                    if (groupsToRemove.length > 0) {
+                        const allLocalGroups = loadFromLocalStorage();
+                        const filteredGroups = allLocalGroups.filter(g => {
+                            return !groupsToRemove.some(toRemove => {
+                                const gId = g.id || g.supabaseId;
+                                const gSupabaseId = g.supabaseId || g.id;
+                                const toRemoveId = toRemove.id || toRemove.supabaseId;
+                                const toRemoveSupabaseId = toRemove.supabaseId || toRemove.id;
+                                return gId === toRemoveId || 
+                                       gSupabaseId === toRemoveId ||
+                                       gId === toRemoveSupabaseId ||
+                                       gSupabaseId === toRemoveSupabaseId;
+                            });
+                        });
+                        if (filteredGroups.length < allLocalGroups.length) {
+                            saveGroupsToLocalStorage(filteredGroups);
+                            console.log('Removed', allLocalGroups.length - filteredGroups.length, 'group(s) from localStorage (not in DB or user not a member)');
+                        }
+                    }
                     
                     window.groups = mergedGroups;
                     

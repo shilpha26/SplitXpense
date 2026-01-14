@@ -1550,6 +1550,22 @@ async function handleGroupChange(payload) {
         } else if (eventType === 'DELETE') {
             // Group was deleted
             const groupId = oldData.id || oldData[groupSchema.id];
+            
+            // Remove from localStorage
+            const localGroups = loadFromLocalStorageSafe();
+            const filteredGroups = localGroups.filter(g => {
+                const gId = g.id || g.supabaseId;
+                const gSupabaseId = g.supabaseId || g.id;
+                return gId !== groupId && 
+                       gSupabaseId !== groupId &&
+                       g.id !== groupId &&
+                       g.supabaseId !== groupId;
+            });
+            if (filteredGroups.length < localGroups.length) {
+                saveGroupsToLocalStorageSafe(filteredGroups);
+                console.log('Removed deleted group from localStorage:', groupId);
+            }
+            
             if (window.currentGroupId === groupId || (window.currentGroup && window.currentGroup.id === groupId)) {
                 console.log('Group was deleted by creator');
                 if (typeof showNotification === 'function') {
@@ -1558,6 +1574,11 @@ async function handleGroupChange(payload) {
                 setTimeout(() => {
                     window.location.href = 'index.html';
                 }, 3000);
+            } else {
+                // Update groups list if on main page
+                if (typeof loadGroups === 'function') {
+                    loadGroups();
+                }
             }
         }
     } catch (error) {
