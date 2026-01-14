@@ -35,10 +35,16 @@ let SCHEMA_MAPPING = {
         name: 'name',
         createdBy: 'created_by',
         updatedBy: 'updated_by',
-        members: 'members',  // JSONB array
+        members: 'members',  // JSONB array - registered user IDs only
+        participants: 'participants',  // JSONB array - non-registered member names
+        pendingDeletion: 'pending_deletion',  // Boolean - group marked for deletion
+        deletionInitiatedBy: 'deletion_initiated_by',  // User ID who initiated deletion
+        deletionConfirmedBy: 'deletion_confirmed_by',  // JSONB array - user IDs who confirmed
+        deletionRestoredBy: 'deletion_restored_by',  // JSONB array - user IDs who want to restore
+        deletionInitiatedAt: 'deletion_initiated_at',  // Timestamp
         createdAt: 'created_at',
         updatedAt: 'updated_at'
-        // NO: total_expenses, participants (computed from expenses)
+        // NO: total_expenses (computed from expenses)
     },
     expenses: {
         id: 'id',  // UUID type in database
@@ -240,17 +246,20 @@ async function syncGroupToDatabase(group) {
         console.log('Syncing group with supabaseId:', supabaseId, 'group.id:', group.id);
         
         // Build group record with all available columns
+        // Separate registered user IDs (members) from non-registered participant names
+        const members = Array.isArray(group.members) ? group.members : [];
+        const participants = Array.isArray(group.participants) ? group.participants : [];
+        
         const groupRecord = {
             [groupSchema.id]: supabaseId, // Use UUID for Supabase
             [groupSchema.name]: group.name,
             [groupSchema.createdBy]: group.createdBy || window.currentUser.id,
             [groupSchema.updatedBy]: window.currentUser.id,
-            [groupSchema.members]: Array.isArray(group.members) ? group.members : [],
+            [groupSchema.members]: members,  // Registered user IDs only
+            [groupSchema.participants]: participants,  // Non-registered member names
             [groupSchema.createdAt]: group.createdAt || new Date().toISOString(),
             [groupSchema.updatedAt]: new Date().toISOString()
         };
-        
-        // Note: total_expenses, participants are computed from expenses
 
         console.log('📤 Group record structure:', JSON.stringify(groupRecord, null, 2));
         console.log('📤 Using schema mapping:', groupSchema);
@@ -479,6 +488,7 @@ async function fetchAllGroupsFromDatabase() {
             const isCreator = createdBy === userId;
             
             // Also check if user is in the members array (by ID or name)
+            // IMPORTANT: If user is not in members array AND not the creator, they won't see the group
             let isMember = false;
             const members = group[groupSchema.members] || group.members;
             if (members) {
@@ -504,6 +514,8 @@ async function fetchAllGroupsFromDatabase() {
                 }
             }
             
+            // User sees group only if they are the creator OR a member
+            // If removed from members array, they won't see it (unless they're the creator)
             return isCreator || isMember;
         });
 
@@ -594,11 +606,50 @@ async function fetchAllGroupsFromDatabase() {
                 // Store the Supabase ID for future updates
                 const supabaseId = group[groupSchema.id] || group.id;
                 
+                // Get participants
+                let participants = group[groupSchema.participants] || group.participants || [];
+                if (typeof participants === 'string') {
+                    try {
+                        participants = JSON.parse(participants);
+                    } catch (e) {
+                        participants = [];
+                    }
+                }
+                if (!Array.isArray(participants)) {
+                    participants = [];
+                }
+
+                // Get deletion tracking fields
+                let deletionConfirmedBy = group[groupSchema.deletionConfirmedBy] || group.deletion_confirmed_by || [];
+                let deletionRestoredBy = group[groupSchema.deletionRestoredBy] || group.deletion_restored_by || [];
+                if (typeof deletionConfirmedBy === 'string') {
+                    try {
+                        deletionConfirmedBy = JSON.parse(deletionConfirmedBy);
+                    } catch (e) {
+                        deletionConfirmedBy = [];
+                    }
+                }
+                if (typeof deletionRestoredBy === 'string') {
+                    try {
+                        deletionRestoredBy = JSON.parse(deletionRestoredBy);
+                    } catch (e) {
+                        deletionRestoredBy = [];
+                    }
+                }
+                if (!Array.isArray(deletionConfirmedBy)) deletionConfirmedBy = [];
+                if (!Array.isArray(deletionRestoredBy)) deletionRestoredBy = [];
+
                 const completeGroup = {
                     id: supabaseId, // Use Supabase UUID as the ID
                     supabaseId: supabaseId, // Also store as supabaseId for sync
                     name: group[groupSchema.name] || group.name,
-                    members: members,
+                    members: members,  // Registered user IDs only
+                    participants: participants,  // Non-registered member names
+                    pendingDeletion: group[groupSchema.pendingDeletion] || group.pending_deletion || false,
+                    deletionInitiatedBy: group[groupSchema.deletionInitiatedBy] || group.deletion_initiated_by,
+                    deletionConfirmedBy: deletionConfirmedBy,
+                    deletionRestoredBy: deletionRestoredBy,
+                    deletionInitiatedAt: group[groupSchema.deletionInitiatedAt] || group.deletion_initiated_at,
                     expenses: expenses ? expenses.map(expense => ({
                         id: expense[expenseSchema.id] || expense.id,
                         name: expense[expenseSchema.description] || expense.description || expense.name,
@@ -695,17 +746,25 @@ async function fetchGroupFromDatabase(groupId) {
         }
 
         // Structure the group data properly with schema mapping
-        // Derive members from stored members OR from expenses (fallback)
-        let members = [];
+        // Separate registered user IDs (members) from non-registered participant names
+        let members = [];  // Registered user IDs
+        let participants = [];  // Non-registered member names
         
-        // Try to get members from database (handle JSONB)
+        // Get registered user IDs (members)
         if (groupSchema.members && group[groupSchema.members] !== undefined && group[groupSchema.members] !== null) {
             members = group[groupSchema.members];
         } else if (group.members !== undefined && group.members !== null) {
             members = group.members;
         }
         
-        // Handle JSONB/JSON string format
+        // Get non-registered participant names
+        if (groupSchema.participants && group[groupSchema.participants] !== undefined && group[groupSchema.participants] !== null) {
+            participants = group[groupSchema.participants];
+        } else if (group.participants !== undefined && group.participants !== null) {
+            participants = group.participants;
+        }
+        
+        // Handle JSONB/JSON string format for both
         if (typeof members === 'string') {
             try {
                 members = JSON.parse(members);
@@ -714,39 +773,60 @@ async function fetchGroupFromDatabase(groupId) {
                 members = [];
             }
         }
+        if (typeof participants === 'string') {
+            try {
+                participants = JSON.parse(participants);
+            } catch (e) {
+                console.warn('Failed to parse participants JSON:', e);
+                participants = [];
+            }
+        }
         
-        // Ensure it's an array
+        // Ensure both are arrays
         if (!Array.isArray(members)) {
             members = [];
         }
-        
-        // Fallback: derive members from expenses if still empty
-        if (members.length === 0 && expenses && expenses.length > 0) {
-            console.log('Members not found in group, deriving from expenses...');
-            const memberSet = new Set();
-            expenses.forEach(expense => {
-                if (expense[expenseSchema.paidBy] || expense.paid_by) {
-                    memberSet.add(expense[expenseSchema.paidBy] || expense.paid_by);
-                }
-                const splitBetween = expense[expenseSchema.splitBetween] || expense.split_between || [];
-                if (Array.isArray(splitBetween)) {
-                    splitBetween.forEach(m => memberSet.add(m));
-                }
-            });
-            members = Array.from(memberSet);
-            console.log('Derived members from expenses:', members);
+        if (!Array.isArray(participants)) {
+            participants = [];
         }
         
-        console.log('Final members for group:', group[groupSchema.name] || group.name, ':', members);
+        console.log('Group members (registered user IDs):', members);
+        console.log('Group participants (non-registered names):', participants);
         
         // Store the Supabase ID for future updates
         const supabaseId = group[groupSchema.id] || group.id;
         
+        // Get deletion tracking fields
+        let deletionConfirmedBy = group[groupSchema.deletionConfirmedBy] || group.deletion_confirmed_by || [];
+        let deletionRestoredBy = group[groupSchema.deletionRestoredBy] || group.deletion_restored_by || [];
+        if (typeof deletionConfirmedBy === 'string') {
+            try {
+                deletionConfirmedBy = JSON.parse(deletionConfirmedBy);
+            } catch (e) {
+                deletionConfirmedBy = [];
+            }
+        }
+        if (typeof deletionRestoredBy === 'string') {
+            try {
+                deletionRestoredBy = JSON.parse(deletionRestoredBy);
+            } catch (e) {
+                deletionRestoredBy = [];
+            }
+        }
+        if (!Array.isArray(deletionConfirmedBy)) deletionConfirmedBy = [];
+        if (!Array.isArray(deletionRestoredBy)) deletionRestoredBy = [];
+
         const completeGroup = {
             id: supabaseId, // Use Supabase UUID as the ID
             supabaseId: supabaseId, // Also store as supabaseId for sync
             name: group[groupSchema.name] || group.name,
-            members: members,
+            members: members,  // Registered user IDs only
+            participants: participants,  // Non-registered member names
+            pendingDeletion: group[groupSchema.pendingDeletion] || group.pending_deletion || false,
+            deletionInitiatedBy: group[groupSchema.deletionInitiatedBy] || group.deletion_initiated_by,
+            deletionConfirmedBy: deletionConfirmedBy,
+            deletionRestoredBy: deletionRestoredBy,
+            deletionInitiatedAt: group[groupSchema.deletionInitiatedAt] || group.deletion_initiated_at,
             expenses: expenses ? expenses.map(expense => ({
                 id: expense[expenseSchema.id] || expense.id,
                 name: expense[expenseSchema.description] || expense.description || expense.name,
@@ -840,9 +920,9 @@ async function deleteExpenseFromDatabase(expenseId) {
     }
 }
 
-// FIXED: Schema-aware group deletion
-async function deleteGroupFromDatabase(groupId) {
-    console.log('deleteGroupFromDatabase called with ID:', groupId);
+// FIXED: Schema-aware group deletion with collaborative confirmation
+async function deleteGroupFromDatabase(groupId, forceDelete = false) {
+    console.log('deleteGroupFromDatabase called with ID:', groupId, 'forceDelete:', forceDelete);
 
     if (!groupId) {
         throw new Error('Group ID is required for deletion');
@@ -864,36 +944,94 @@ async function deleteGroupFromDatabase(groupId) {
     await detectDatabaseSchema();
 
     try {
-        console.log('Deleting group from database:', groupId);
-
         const groupSchema = SCHEMA_MAPPING.groups;
         const expenseSchema = SCHEMA_MAPPING.expenses;
 
-        // Delete expenses first
-        const { error: expenseError } = await window.supabaseClient
-            .from('expenses')
-            .delete()
-            .eq(expenseSchema.groupId, groupId);
+        // If forceDelete is true, delete immediately (for single-member groups or confirmed deletions)
+        if (forceDelete) {
+            console.log('Force deleting group and all expenses:', groupId);
 
-        if (expenseError) {
-            console.warn('Failed to delete group expenses:', expenseError);
-        } else {
-            console.log('Group expenses deleted');
+            // Delete expenses first
+            const { error: expenseError } = await window.supabaseClient
+                .from('expenses')
+                .delete()
+                .eq(expenseSchema.groupId, groupId);
+
+            if (expenseError) {
+                console.warn('Failed to delete group expenses:', expenseError);
+            } else {
+                console.log('Group expenses deleted');
+            }
+
+            // Then delete group
+            const { data, error: groupError } = await window.supabaseClient
+                .from('groups')
+                .delete()
+                .eq(groupSchema.id, groupId)
+                .select();
+
+            if (groupError) {
+                throw groupError;
+            }
+
+            console.log('Group deleted from database successfully');
+            cleanupDeleteQueue('group', groupId);
+            return;
         }
 
-        // Then delete group
-        const { data, error: groupError } = await window.supabaseClient
+        // For collaborative deletion: mark group as pending deletion
+        console.log('Marking group for collaborative deletion:', groupId);
+        
+        // Fetch current group to check members
+        const { data: group, error: fetchError } = await window.supabaseClient
             .from('groups')
-            .delete()
+            .select('*')
             .eq(groupSchema.id, groupId)
-            .select();
+            .single();
 
-        if (groupError) {
-            throw groupError;
+        if (fetchError || !group) {
+            throw new Error('Group not found');
         }
 
-        console.log('Group deleted from database successfully');
-        cleanupDeleteQueue('group', groupId);
+        // Get members array
+        let members = group[groupSchema.members] || group.members || [];
+        if (typeof members === 'string') {
+            try {
+                members = JSON.parse(members);
+            } catch (e) {
+                members = [];
+            }
+        }
+        if (!Array.isArray(members)) {
+            members = [];
+        }
+
+        // If only creator is a member, delete immediately
+        const creatorId = group[groupSchema.createdBy] || group.created_by;
+        if (members.length === 1 && members[0] === creatorId) {
+            console.log('Only creator is member, deleting immediately');
+            return await deleteGroupFromDatabase(groupId, true); // Force delete
+        }
+
+        // Mark group for collaborative deletion
+        const { error: updateError } = await window.supabaseClient
+            .from('groups')
+            .update({
+                [groupSchema.pendingDeletion]: true,
+                [groupSchema.deletionInitiatedBy]: window.currentUser.id,
+                [groupSchema.deletionConfirmedBy]: [window.currentUser.id], // Creator confirms immediately
+                [groupSchema.deletionRestoredBy]: [],
+                [groupSchema.deletionInitiatedAt]: new Date().toISOString(),
+                [groupSchema.updatedAt]: new Date().toISOString()
+            })
+            .eq(groupSchema.id, groupId);
+
+        if (updateError) {
+            throw updateError;
+        }
+
+        console.log('Group marked for collaborative deletion. Other members will be notified.');
+        // Real-time sync will notify other members
 
     } catch (error) {
         console.error('Failed to delete group from database:', error);
@@ -905,6 +1043,174 @@ async function deleteGroupFromDatabase(groupId) {
         });
         throw error;
     }
+}
+
+// Confirm group deletion (for members)
+async function confirmGroupDeletion(groupId) {
+    if (!window.supabaseClient || !window.currentUser) {
+        throw new Error('Supabase client or user not available');
+    }
+
+    await detectDatabaseSchema();
+    const groupSchema = SCHEMA_MAPPING.groups;
+
+    // Fetch current group
+    const { data: group, error: fetchError } = await window.supabaseClient
+        .from('groups')
+        .select('*')
+        .eq(groupSchema.id, groupId)
+        .single();
+
+    if (fetchError || !group) {
+        throw new Error('Group not found');
+    }
+
+    // Get current confirmation arrays
+    let confirmedBy = group[groupSchema.deletionConfirmedBy] || group.deletion_confirmed_by || [];
+    if (typeof confirmedBy === 'string') {
+        try {
+            confirmedBy = JSON.parse(confirmedBy);
+        } catch (e) {
+            confirmedBy = [];
+        }
+    }
+    if (!Array.isArray(confirmedBy)) {
+        confirmedBy = [];
+    }
+
+    // Add current user to confirmed list
+    if (!confirmedBy.includes(window.currentUser.id)) {
+        confirmedBy.push(window.currentUser.id);
+    }
+
+    // Get members
+    let members = group[groupSchema.members] || group.members || [];
+    if (typeof members === 'string') {
+        try {
+            members = JSON.parse(members);
+        } catch (e) {
+            members = [];
+        }
+    }
+    if (!Array.isArray(members)) {
+        members = [];
+    }
+
+        // Get creator ID - creator should never be removed
+        const creatorId = group[groupSchema.createdBy] || group.created_by;
+        
+        // Check if all members have confirmed
+        const allMembersConfirmed = members.every(memberId => confirmedBy.includes(memberId));
+
+        if (allMembersConfirmed) {
+            // All members confirmed - delete the group
+            console.log('All members confirmed deletion, deleting group');
+            return await deleteGroupFromDatabase(groupId, true);
+        } else {
+            // Update confirmation status
+            const { error: updateError } = await window.supabaseClient
+                .from('groups')
+                .update({
+                    [groupSchema.deletionConfirmedBy]: confirmedBy,
+                    [groupSchema.updatedAt]: new Date().toISOString()
+                })
+                .eq(groupSchema.id, groupId);
+
+            if (updateError) {
+                throw updateError;
+            }
+
+            // Remove this member from the group (they confirmed deletion)
+            // BUT: Never remove the creator from their own group
+            const updatedMembers = members.filter(m => 
+                m !== window.currentUser.id || m === creatorId
+            );
+            
+            // If only creator is left (or no members), delete the group
+            if (updatedMembers.length === 0 || (updatedMembers.length === 1 && updatedMembers[0] === creatorId)) {
+                console.log('All members removed (only creator left), deleting group');
+                return await deleteGroupFromDatabase(groupId, true);
+            }
+
+            // Update members array
+            const { error: memberUpdateError } = await window.supabaseClient
+                .from('groups')
+                .update({
+                    [groupSchema.members]: updatedMembers,
+                    [groupSchema.updatedAt]: new Date().toISOString()
+                })
+                .eq(groupSchema.id, groupId);
+
+            if (memberUpdateError) {
+                throw memberUpdateError;
+            }
+
+            console.log('Member confirmed deletion and removed from group');
+            
+            // Remove group from this user's localStorage since they're no longer a member
+            const localGroups = loadFromLocalStorageSafe();
+            const filteredGroups = localGroups.filter(g => g.id !== groupId && g.supabaseId !== groupId);
+            saveGroupsToLocalStorageSafe(filteredGroups);
+            console.log('Group removed from user localStorage (user is no longer a member)');
+        }
+}
+
+// Restore group (cancel deletion)
+async function restoreGroup(groupId) {
+    if (!window.supabaseClient || !window.currentUser) {
+        throw new Error('Supabase client or user not available');
+    }
+
+    await detectDatabaseSchema();
+    const groupSchema = SCHEMA_MAPPING.groups;
+
+    // Fetch current group
+    const { data: group, error: fetchError } = await window.supabaseClient
+        .from('groups')
+        .select('*')
+        .eq(groupSchema.id, groupId)
+        .single();
+
+    if (fetchError || !group) {
+        throw new Error('Group not found');
+    }
+
+    // Get current restoration array
+    let restoredBy = group[groupSchema.deletionRestoredBy] || group.deletion_restored_by || [];
+    if (typeof restoredBy === 'string') {
+        try {
+            restoredBy = JSON.parse(restoredBy);
+        } catch (e) {
+            restoredBy = [];
+        }
+    }
+    if (!Array.isArray(restoredBy)) {
+        restoredBy = [];
+    }
+
+    // Add current user to restored list
+    if (!restoredBy.includes(window.currentUser.id)) {
+        restoredBy.push(window.currentUser.id);
+    }
+
+    // Cancel deletion - clear all deletion flags
+    const { error: updateError } = await window.supabaseClient
+        .from('groups')
+        .update({
+            [groupSchema.pendingDeletion]: false,
+            [groupSchema.deletionInitiatedBy]: null,
+            [groupSchema.deletionConfirmedBy]: [],
+            [groupSchema.deletionRestoredBy]: restoredBy,
+            [groupSchema.deletionInitiatedAt]: null,
+            [groupSchema.updatedAt]: new Date().toISOString()
+        })
+        .eq(groupSchema.id, groupId);
+
+    if (updateError) {
+        throw updateError;
+    }
+
+    console.log('Group restoration requested by member');
 }
 
 // ========================================
@@ -1057,15 +1363,37 @@ async function joinUserToGroup(groupId, userId) {
             currentMembers = [];
         }
         
+        // Check if user is already a member (by ID or name for backward compatibility)
+        const userName = window.currentUser?.name;
+        const isAlreadyMember = currentMembers.includes(userId) || 
+                               (userName && currentMembers.includes(userName)) ||
+                               currentMembers.some(m => m && String(m).toLowerCase() === String(userId).toLowerCase()) ||
+                               (userName && currentMembers.some(m => m && String(m).toLowerCase() === String(userName).toLowerCase()));
+        
         // Add user if not already a member
-        if (!currentMembers.includes(userId)) {
+        // ALWAYS use user ID for registered users (IDs are unique and reliable)
+        if (!isAlreadyMember) {
+            // Always add the user's ID when joining
+            // This ensures consistency and uniqueness
             const updatedMembers = [...currentMembers, userId];
+            
+            // Also remove the user's name if it exists (migrate from name to ID)
+            const membersWithoutName = updatedMembers.filter(m => 
+                !userName || String(m).toLowerCase() !== String(userName).toLowerCase()
+            );
+            
+            // Ensure we have the ID in the array
+            if (!membersWithoutName.includes(userId)) {
+                membersWithoutName.push(userId);
+            }
+            
+            const finalMembers = membersWithoutName;
 
             // Update group with new member (store as JSONB array)
             const { error: updateError } = await window.supabaseClient
                 .from('groups')
                 .update({
-                    [groupSchema.members]: updatedMembers,
+                    [groupSchema.members]: finalMembers,
                     [groupSchema.updatedAt]: new Date().toISOString(),
                     [groupSchema.updatedBy]: userId
                 })
@@ -1167,9 +1495,13 @@ window.startRealtimeSync = function() {
 async function handleGroupChange(payload) {
     try {
         const { eventType, new: newData, old: oldData } = payload;
+        const groupSchema = SCHEMA_MAPPING.groups;
 
         if (eventType === 'UPDATE' || eventType === 'INSERT') {
-            const groupId = newData.id || newData[SCHEMA_MAPPING.groups.id];
+            const groupId = newData.id || newData[groupSchema.id];
+            
+            // Check if group is marked for deletion
+            const pendingDeletion = newData[groupSchema.pendingDeletion] || newData.pending_deletion;
             
             // Reload the group if it's currently open
             if (window.currentGroupId === groupId || (window.currentGroup && window.currentGroup.id === groupId)) {
@@ -1191,9 +1523,20 @@ async function handleGroupChange(payload) {
                         if (window.currentGroup && window.currentGroup.id === groupId) {
                             window.currentGroup = updatedGroup;
                             if (typeof updateGroupDisplay === 'function') {
-                                updateGroupDisplay();
+                                await updateGroupDisplay();
                             }
-                            // Notification removed for cleaner UI
+                            
+                            // Show notification if deletion was initiated
+                            if (pendingDeletion && window.currentUser) {
+                                const creatorId = updatedGroup.createdBy || updatedGroup.created_by;
+                                if (creatorId !== window.currentUser.id) {
+                                    // Member - show deletion confirmation modal
+                                    if (typeof showDeletionConfirmationModal === 'function') {
+                                        showDeletionConfirmationModal();
+                                    }
+                                }
+                            }
+                            
                             console.log('Group updated by another user');
                         }
                     }
@@ -1203,6 +1546,18 @@ async function handleGroupChange(payload) {
                 if (typeof loadGroups === 'function') {
                     loadGroups();
                 }
+            }
+        } else if (eventType === 'DELETE') {
+            // Group was deleted
+            const groupId = oldData.id || oldData[groupSchema.id];
+            if (window.currentGroupId === groupId || (window.currentGroup && window.currentGroup.id === groupId)) {
+                console.log('Group was deleted by creator');
+                if (typeof showNotification === 'function') {
+                    showNotification('This group has been deleted by the creator', 'info');
+                }
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 3000);
             }
         }
     } catch (error) {
@@ -1294,6 +1649,8 @@ window.fetchAllGroupsFromDatabase = fetchAllGroupsFromDatabase;
 window.fetchGroupFromDatabase = fetchGroupFromDatabase;
 window.deleteExpenseFromDatabase = deleteExpenseFromDatabase;
 window.deleteGroupFromDatabase = deleteGroupFromDatabase;
+window.confirmGroupDeletion = confirmGroupDeletion;
+window.restoreGroup = restoreGroup;
 window.syncExpenseToDatabase = syncExpenseToDatabase;
 window.syncGroupToDatabase = syncGroupToDatabase;
 window.syncUserToDatabase = syncUserToDatabase;
@@ -1352,5 +1709,8 @@ window.debugSync = function() {
         namespace: 'splitEasySync'
     };
 };
+
+// Export SCHEMA_MAPPING to window for access from other scripts
+window.SCHEMA_MAPPING = SCHEMA_MAPPING;
 
 console.log('Database schema-aware SplitEasy sync system loaded successfully');

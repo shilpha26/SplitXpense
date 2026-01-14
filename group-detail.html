@@ -40,7 +40,7 @@
         <section class="expenses-section">
             <div class="section-header">
                 <div class="section-header-actions">
-                    <button class="btn-success" onclick="showAddExpenseModal()">Add Expense</button>
+                <button class="btn-success" onclick="showAddExpenseModal()">Add Expense</button>
                 </div>
             </div>
             <div id="expensesList" class="expenses-list">
@@ -405,9 +405,10 @@
             }
 
             // Calculate each person's share (split amount, not what they paid)
+            const allPeople = getAllGroupPeopleSync(currentGroup);
             const shareByPerson = {};
-            currentGroup.members.forEach(member => {
-                shareByPerson[member] = 0;
+            allPeople.forEach(person => {
+                shareByPerson[person] = 0;
             });
 
             currentGroup.expenses.forEach(expense => {
@@ -540,6 +541,109 @@
         // CORE FUNCTIONS - FIXED FOR EXPENSE PERSISTENCE
         // ========================================
 
+        // Helper function to get user name from ID
+        // Checks localStorage first, then tries to fetch from database
+        async function getUserNameFromId(userId) {
+            if (!userId) return userId;
+            
+            // Check if it's the current user
+            if (window.currentUser && window.currentUser.id === userId) {
+                return window.currentUser.name;
+            }
+            
+            // Check localStorage for previous users
+            try {
+                const previousUsers = JSON.parse(localStorage.getItem('spliteasy_previous_users') || '[]');
+                const user = previousUsers.find(u => u.id === userId);
+                if (user) return user.name;
+            } catch (e) {
+                console.warn('Error reading previous users:', e);
+            }
+            
+            // Try to fetch from database
+            if (window.supabaseClient) {
+                try {
+                    const { data, error } = await window.supabaseClient
+                        .from('users')
+                        .select('name')
+                        .eq('id', userId)
+                        .single();
+                    
+                    if (!error && data) {
+                        return data.name;
+                    }
+                } catch (e) {
+                    console.warn('Error fetching user name from database:', e);
+                }
+            }
+            
+            // Fallback: return ID if name not found
+            return userId;
+        }
+
+        // Helper function to get all people in a group (registered members + participants)
+        // Converts member IDs to names for display
+        async function getAllGroupPeople(group) {
+            if (!group) return [];
+            
+            // Get registered user IDs (members) and convert to names
+            const memberIds = Array.isArray(group.members) ? group.members : [];
+            const memberNames = await Promise.all(
+                memberIds.map(async (id) => {
+                    // Check if it's already a name (for backward compatibility)
+                    if (typeof id === 'string' && !id.includes('user') && id.length < 20) {
+                        return id; // Likely already a name
+                    }
+                    return await getUserNameFromId(id);
+                })
+            );
+            
+            // Get non-registered participant names
+            const participants = Array.isArray(group.participants) ? group.participants : [];
+            
+            // Combine and remove duplicates
+            const allPeople = [...memberNames, ...participants];
+            return [...new Set(allPeople)]; // Remove duplicates
+        }
+
+        // Synchronous version for immediate use (uses cached data only)
+        function getAllGroupPeopleSync(group) {
+            if (!group) return [];
+            
+            // Get registered user IDs (members)
+            const memberIds = Array.isArray(group.members) ? group.members : [];
+            const memberNames = memberIds.map(id => {
+                // Check if it's the current user
+                if (window.currentUser && window.currentUser.id === id) {
+                    return window.currentUser.name;
+                }
+                
+                // Check if it's already a name (for backward compatibility)
+                if (typeof id === 'string' && !id.includes('user') && id.length < 20) {
+                    return id; // Likely already a name
+                }
+                
+                // Try to get from localStorage
+                try {
+                    const previousUsers = JSON.parse(localStorage.getItem('spliteasy_previous_users') || '[]');
+                    const user = previousUsers.find(u => u.id === id);
+                    if (user) return user.name;
+                } catch (e) {
+                    // Ignore errors
+                }
+                
+                // Fallback: return ID
+                return id;
+            });
+            
+            // Get non-registered participant names
+            const participants = Array.isArray(group.participants) ? group.participants : [];
+            
+            // Combine and remove duplicates
+            const allPeople = [...memberNames, ...participants];
+            return [...new Set(allPeople)];
+        }
+
         // FIXED: Enhanced loadGroupData - Supabase first
         async function loadGroupData(groupId) {
             console.log('Loading group data for ID:', groupId);
@@ -561,148 +665,187 @@
                 // Fallback to localStorage cache (only if user is logged in)
                 const groups = loadFromLocalStorage();
                 const foundGroup = groups.find(g => g.id === groupId);
-                if (foundGroup) {
+            if (foundGroup) {
                     currentGroup = foundGroup;
                     window.currentGroup = foundGroup;
-                    updateGroupDisplay();
+                    await updateGroupDisplay();
                     showNotification('Using cached data. Some features may be limited.', 'warning');
                     return;
                 } else {
                     showNotification('Group not found. Please check your connection.', 'error');
                     setTimeout(() => window.location.href = 'index.html', 2000);
-                    return;
+                return;
                 }
             }
 
             try {
+                // Check if this is a shared link (UUID format) FIRST
+                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                const isSharedLink = uuidRegex.test(groupId);
+                
+                console.log('Group ID format check:', { groupId, isSharedLink });
+                
+                // If it's a shared link, skip the normal fetch and go straight to direct fetch
+                if (isSharedLink) {
+                    console.log('Detected shared link (UUID format), fetching directly from database...');
+                    try {
+                        // Try to fetch the group directly from Supabase without membership check
+                        const { data: directGroup, error: directError } = await window.supabaseClient
+                            .from('groups')
+                            .select('*')
+                            .eq('id', groupId)
+                            .maybeSingle();
+                        
+                        if (directError) {
+                            console.error('Error fetching group directly:', directError);
+                            throw new Error(`Database error: ${directError.message}`);
+                        }
+                        
+                        if (directGroup) {
+                            console.log('Group found via shared link:', directGroup);
+                            
+                            // Ensure schema is detected
+                            if (typeof window.detectDatabaseSchema === 'function') {
+                                await window.detectDatabaseSchema();
+                            }
+                            
+                            // Get schema mappings - check multiple possible locations
+                            let schemaMapping = null;
+                            if (typeof window.SCHEMA_MAPPING !== 'undefined') {
+                                schemaMapping = window.SCHEMA_MAPPING;
+                            } else if (typeof window.splitEasySync !== 'undefined' && window.splitEasySync.SCHEMA_MAPPING) {
+                                schemaMapping = window.splitEasySync.SCHEMA_MAPPING;
+                            } else {
+                                // Fallback: try to access from shared-sync.js scope
+                                // If not available, use default snake_case column names
+                                console.warn('SCHEMA_MAPPING not found, using default column names');
+                            }
+                            
+                            const expenseSchema = schemaMapping?.expenses || {};
+                            const groupSchema = schemaMapping?.groups || {};
+                            
+                            // Fetch expenses for this group
+                            const groupIdColumn = expenseSchema.groupId || 'group_id';
+                            const { data: expenses, error: expensesError } = await window.supabaseClient
+                                .from('expenses')
+                                .select('*')
+                                .eq(groupIdColumn, groupId)
+                                .order(expenseSchema.createdAt || 'created_at', { ascending: false });
+                            
+                            if (expensesError) {
+                                console.warn('Error fetching expenses:', expensesError);
+                            }
+                            
+                                // Handle members array (registered user IDs) - might be JSONB string
+                            let members = directGroup[groupSchema.members] || directGroup.members || [];
+                            if (typeof members === 'string') {
+                                try {
+                                    members = JSON.parse(members);
+                                } catch (e) {
+                                    console.warn('Failed to parse members JSON:', e);
+                                    members = [];
+                                }
+                            }
+                            if (!Array.isArray(members)) {
+                                members = [];
+                            }
+                            
+                            // Handle participants array (non-registered member names) - might be JSONB string
+                            let participants = directGroup[groupSchema.participants] || directGroup.participants || [];
+                            if (typeof participants === 'string') {
+                                try {
+                                    participants = JSON.parse(participants);
+                                } catch (e) {
+                                    console.warn('Failed to parse participants JSON:', e);
+                                    participants = [];
+                                }
+                            }
+                            if (!Array.isArray(participants)) {
+                                participants = [];
+                            }
+                            
+                            // Structure the group data properly
+                            const structuredGroup = {
+                                id: directGroup[groupSchema.id] || directGroup.id,
+                                supabaseId: directGroup[groupSchema.id] || directGroup.id,
+                                name: directGroup[groupSchema.name] || directGroup.name,
+                                members: members,  // Registered user IDs only
+                                participants: participants,  // Non-registered member names
+                                expenses: (expenses || []).map(exp => ({
+                                    id: exp[expenseSchema.id] || exp.id,
+                                    name: exp[expenseSchema.description] || exp.description || exp.name,
+                                    amount: parseFloat(exp[expenseSchema.amount] || exp.amount || 0),
+                                    paidBy: exp[expenseSchema.paidBy] || exp.paid_by || exp.paidby,
+                                    splitBetween: exp[expenseSchema.splitBetween] || exp.split_between || [],
+                                    date: exp[expenseSchema.createdAt] || exp.created_at || exp.createdat,
+                                    perPersonAmount: exp[expenseSchema.perPersonAmount] || exp.per_person_amount || 0,
+                                    supabaseId: exp[expenseSchema.id] || exp.id
+                                })),
+                                totalExpenses: 0,
+                                createdAt: directGroup[groupSchema.createdAt] || directGroup.created_at || directGroup.createdat,
+                                createdBy: directGroup[groupSchema.createdBy] || directGroup.created_by || directGroup.createdby
+                            };
+                            
+                            // Calculate total expenses
+                            structuredGroup.totalExpenses = structuredGroup.expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+                            
+                            // Join user to group
+                            console.log('Joining user to group...');
+                            try {
+                                await joinGroupFromSharedLink(structuredGroup, groupId);
+                            } catch (joinError) {
+                                console.warn('Error joining group (continuing anyway):', joinError);
+                                // Continue even if join fails - user can still view the group
+                            }
+                            
+                            // Set as current group and display
+                            currentGroup = structuredGroup;
+                            window.currentGroup = structuredGroup;
+                            
+                            // Save to localStorage
+                            const localGroups = loadFromLocalStorage();
+                            const existingIndex = localGroups.findIndex(g => g.id === groupId || g.supabaseId === groupId);
+                            if (existingIndex >= 0) {
+                                localGroups[existingIndex] = structuredGroup;
+                            } else {
+                                localGroups.push(structuredGroup);
+                            }
+                            saveGroupsToLocalStorage(localGroups);
+                            
+                            await updateGroupDisplay();
+                            showNotification('Joined group successfully!', 'success');
+                            return; // IMPORTANT: Return here to prevent falling through to error handler
+                        } else {
+                            console.log('Group not found in database with ID:', groupId);
+                            // Continue to normal fetch flow below
+                        }
+                    } catch (shareError) {
+                        console.error('Error processing shared link group:', shareError);
+                        console.error('Share error details:', {
+                            message: shareError.message,
+                            stack: shareError.stack
+                        });
+                        // Don't throw here, let it fall through to normal fetch
+                    }
+                }
+                
+                // Normal flow: try to fetch group (checks membership)
                 if (typeof window.fetchGroupFromDatabase !== 'function') {
                     throw new Error('fetchGroupFromDatabase function not available');
                 }
 
+                console.log('Fetching group using normal method (checks membership)...');
                 const fetchedGroup = await window.fetchGroupFromDatabase(groupId);
 
                 if (!fetchedGroup) {
-                    // Check if this is a shared link (UUID format)
-                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                    const isSharedLink = uuidRegex.test(groupId);
-                    
-                    if (isSharedLink) {
-                        // This is a shared link - try to fetch directly from database
-                        // even if user isn't a member yet
-                        console.log('Detected shared link, attempting to fetch group directly...');
-                        try {
-                            // Try to fetch the group directly from Supabase without membership check
-                            const { data: directGroup, error: directError } = await window.supabaseClient
-                                .from('groups')
-                                .select('*')
-                                .eq('id', groupId)
-                                .maybeSingle();
-                            
-                            if (directError) {
-                                console.error('Error fetching group directly:', directError);
-                                throw new Error(`Database error: ${directError.message}`);
-                            }
-                            
-                            if (directGroup) {
-                                console.log('Group found via shared link:', directGroup);
-                                
-                                // Ensure schema is detected
-                                if (typeof window.detectDatabaseSchema === 'function') {
-                                    await window.detectDatabaseSchema();
-                                }
-                                
-                                // Get schema mappings with fallbacks
-                                const expenseSchema = (window.SCHEMA_MAPPING?.expenses || {});
-                                const groupSchema = (window.SCHEMA_MAPPING?.groups || {});
-                                
-                                // Fetch expenses for this group
-                                const groupIdColumn = expenseSchema.groupId || 'group_id';
-                                const { data: expenses, error: expensesError } = await window.supabaseClient
-                                    .from('expenses')
-                                    .select('*')
-                                    .eq(groupIdColumn, groupId)
-                                    .order(expenseSchema.createdAt || 'created_at', { ascending: false });
-                                
-                                if (expensesError) {
-                                    console.warn('Error fetching expenses:', expensesError);
-                                }
-                                
-                                // Handle members array (might be JSONB string)
-                                let members = directGroup[groupSchema.members] || directGroup.members || [];
-                                if (typeof members === 'string') {
-                                    try {
-                                        members = JSON.parse(members);
-                                    } catch (e) {
-                                        console.warn('Failed to parse members JSON:', e);
-                                        members = [];
-                                    }
-                                }
-                                if (!Array.isArray(members)) {
-                                    members = [];
-                                }
-                                
-                                // Structure the group data properly
-                                const structuredGroup = {
-                                    id: directGroup[groupSchema.id] || directGroup.id,
-                                    supabaseId: directGroup[groupSchema.id] || directGroup.id,
-                                    name: directGroup[groupSchema.name] || directGroup.name,
-                                    members: members,
-                                    expenses: (expenses || []).map(exp => ({
-                                        id: exp[expenseSchema.id] || exp.id,
-                                        name: exp[expenseSchema.description] || exp.description || exp.name,
-                                        amount: parseFloat(exp[expenseSchema.amount] || exp.amount || 0),
-                                        paidBy: exp[expenseSchema.paidBy] || exp.paid_by || exp.paidby,
-                                        splitBetween: exp[expenseSchema.splitBetween] || exp.split_between || [],
-                                        date: exp[expenseSchema.createdAt] || exp.created_at || exp.createdat,
-                                        perPersonAmount: exp[expenseSchema.perPersonAmount] || exp.per_person_amount || 0,
-                                        supabaseId: exp[expenseSchema.id] || exp.id
-                                    })),
-                                    totalExpenses: 0,
-                                    createdAt: directGroup[groupSchema.createdAt] || directGroup.created_at || directGroup.createdat,
-                                    createdBy: directGroup[groupSchema.createdBy] || directGroup.created_by || directGroup.createdby
-                                };
-                                
-                                // Calculate total expenses
-                                structuredGroup.totalExpenses = structuredGroup.expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
-                                
-                                // Join user to group
-                                console.log('Joining user to group...');
-                                await joinGroupFromSharedLink(structuredGroup, groupId);
-                                
-                                // Set as current group and display
-                                currentGroup = structuredGroup;
-                                window.currentGroup = structuredGroup;
-                                
-                                // Save to localStorage
-                                const localGroups = loadFromLocalStorage();
-                                const existingIndex = localGroups.findIndex(g => g.id === groupId || g.supabaseId === groupId);
-                                if (existingIndex >= 0) {
-                                    localGroups[existingIndex] = structuredGroup;
-                                } else {
-                                    localGroups.push(structuredGroup);
-                                }
-                                saveGroupsToLocalStorage(localGroups);
-                                
-                                updateGroupDisplay();
-                                showNotification('Joined group successfully!', 'success');
-                                return;
-                            } else {
-                                console.log('Group not found in database with ID:', groupId);
-                            }
-                        } catch (shareError) {
-                            console.error('Error processing shared link group:', shareError);
-                            // Don't throw here, let it fall through to cache check
-                        }
-                    }
-                    
-                    // Try localStorage cache as fallback
+                    // Group not found - try localStorage cache as fallback
                     const groups = loadFromLocalStorage();
                     const cachedGroup = groups.find(g => g.id === groupId || g.supabaseId === groupId);
                     if (cachedGroup) {
-                        currentGroup = cachedGroup;
-                        window.currentGroup = cachedGroup;
-                        updateGroupDisplay();
-                        showNotification('Using cached data. Please check your connection.', 'warning');
+                    currentGroup = cachedGroup;
+                    window.currentGroup = cachedGroup;
+                    await updateGroupDisplay();
+                    showNotification('Using cached data. Please check your connection.', 'warning');
                         return;
                     }
                     
@@ -710,8 +853,9 @@
                     if (isSharedLink) {
                         showNotification('Group not found. The link may be invalid or the group was deleted.', 'error');
                     } else {
-                        throw new Error('Group not found');
+                        showNotification('Group not found. Please check your connection.', 'error');
                     }
+                    setTimeout(() => window.location.href = 'index.html', 2000);
                     return;
                 }
 
@@ -721,15 +865,15 @@
                 if (existingIndex >= 0) {
                     localGroups[existingIndex] = fetchedGroup;
                 } else {
-                    localGroups.push(fetchedGroup);
+                localGroups.push(fetchedGroup);
                 }
                 saveGroupsToLocalStorage(localGroups);
 
                 // Set as current group
                 currentGroup = fetchedGroup;
                 window.currentGroup = fetchedGroup;
-                updateGroupDisplay();
-                
+                await updateGroupDisplay();
+
                 showNotification('Group loaded successfully', 'success');
                 return;
             } catch (error) {
@@ -741,7 +885,7 @@
                 if (foundGroup) {
                     currentGroup = foundGroup;
                     window.currentGroup = foundGroup;
-                    updateGroupDisplay();
+                    await updateGroupDisplay();
                     showNotification('Using cached data. Some features may be limited.', 'warning');
                     return;
                 }
@@ -851,27 +995,27 @@
                 try {
                     console.log('Saving', groupsToSave.length, 'groups to localStorage');
 
-                    // Ensure each group has proper structure and calculated totals
+                // Ensure each group has proper structure and calculated totals
                     groupsToSave.forEach((group) => {
-                        // Ensure expenses array exists
-                        if (!group.expenses) {
-                            group.expenses = [];
-                        }
+                    // Ensure expenses array exists
+                    if (!group.expenses) {
+                        group.expenses = [];
+                    }
 
-                        // Calculate total expenses
-                        if (group.expenses.length > 0) {
-                            group.totalExpenses = group.expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+                    // Calculate total expenses
+                    if (group.expenses.length > 0) {
+                        group.totalExpenses = group.expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
 
-                            // Ensure each expense has proper structure
-                            group.expenses.forEach(expense => {
-                                if (expense.splitBetween && expense.splitBetween.length > 0) {
-                                    expense.perPersonAmount = parseFloat(expense.amount || 0) / expense.splitBetween.length;
-                                }
-                            });
-                        } else {
-                            group.totalExpenses = 0;
-                        }
-                    });
+                        // Ensure each expense has proper structure
+                        group.expenses.forEach(expense => {
+                            if (expense.splitBetween && expense.splitBetween.length > 0) {
+                                expense.perPersonAmount = parseFloat(expense.amount || 0) / expense.splitBetween.length;
+                            }
+                        });
+                    } else {
+                        group.totalExpenses = 0;
+                    }
+                });
 
                     // Use batchLocalStorageOperation if available, otherwise direct save
                     if (typeof batchLocalStorageOperation === 'function') {
@@ -887,9 +1031,9 @@
                         console.log('Successfully saved groups to localStorage');
                     }
 
-                } catch (error) {
+            } catch (error) {
                     console.error('Failed to save to localStorage:', error);
-                    showNotification('Failed to save data locally', 'error');
+                showNotification('Failed to save data locally', 'error');
                 }
             };
 
@@ -949,7 +1093,7 @@
         }
 
         // Helper function to update group display
-        function updateGroupDisplay() {
+        async function updateGroupDisplay() {
             if (!currentGroup) {
                 console.error('No currentGroup to display');
                 return;
@@ -959,14 +1103,123 @@
             console.log('Group has', currentGroup.expenses?.length || 0, 'expenses to display');
 
             safeUpdateElement('groupName', currentGroup.name);
-            safeUpdateElement('groupMeta', 
-                `${currentGroup.members.length} members • ${currentGroup.expenses?.length || 0} expenses • Created ${formatDate(currentGroup.createdAt)}`
-            );
+            
+            // Get creator name for display
+            const creatorId = currentGroup.createdBy || currentGroup.created_by;
+            const creatorName = creatorId === window.currentUser?.id 
+                ? window.currentUser.name 
+                : await getUserNameFromId(creatorId);
+            
+            // Check if group is pending deletion
+            const pendingDeletion = currentGroup.pendingDeletion || currentGroup.pending_deletion;
+            let metaText = `${(currentGroup.members?.length || 0) + (currentGroup.participants?.length || 0)} members • ${currentGroup.expenses?.length || 0} expenses • Created by ${creatorName} • ${formatDate(currentGroup.createdAt)}`;
+            
+            if (pendingDeletion) {
+                metaText += ' • ⚠️ Pending Deletion';
+                // Show deletion confirmation modal if user is a member (not creator)
+                if (window.currentUser && creatorId !== window.currentUser.id) {
+                    showDeletionConfirmationModal();
+                }
+            }
+            
+            safeUpdateElement('groupMeta', metaText);
             safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses || 0));
-            safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses || 0));
+
+            // Show/hide delete button based on creator
+            const deleteBtn = document.getElementById('deleteBtn');
+            if (deleteBtn) {
+                if (window.currentUser && creatorId === window.currentUser.id && !pendingDeletion) {
+                    deleteBtn.style.display = 'inline-block';
+                } else {
+                    deleteBtn.style.display = 'none';
+                }
+            }
 
             displayExpenses();
             calculateBalances();
+        }
+
+        // Show deletion confirmation modal for members
+        function showDeletionConfirmationModal() {
+            const modal = document.getElementById('deletionConfirmationModal');
+            const message = document.getElementById('deletionMessage');
+            const status = document.getElementById('deletionStatus');
+            
+            if (!currentGroup || !window.currentUser) return;
+            
+            const creatorId = currentGroup.createdBy || currentGroup.created_by;
+            const creatorName = currentGroup.createdBy === window.currentUser?.id 
+                ? window.currentUser.name 
+                : getUserNameFromId(currentGroup.createdBy || currentGroup.created_by);
+            
+            // Get confirmation status
+            const confirmedBy = currentGroup.deletionConfirmedBy || currentGroup.deletion_confirmed_by || [];
+            const members = currentGroup.members || [];
+            const allConfirmed = members.every(m => confirmedBy.includes(m));
+            
+            if (message) {
+                message.textContent = `${creatorName} has requested to delete this group.`;
+            }
+            
+            if (status) {
+                if (allConfirmed) {
+                    status.textContent = 'All members have confirmed. Group will be deleted.';
+                    status.style.color = '#dc3545';
+                } else {
+                    const confirmedCount = confirmedBy.length;
+                    status.textContent = `${confirmedCount} of ${members.length} members confirmed deletion.`;
+                    status.style.color = '#ffc107';
+                }
+            }
+            
+            if (modal) modal.style.display = 'block';
+        }
+
+        function closeDeletionConfirmationModal() {
+            const modal = document.getElementById('deletionConfirmationModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function handleConfirmDeletion() {
+            if (!currentGroup || !window.currentUser) return;
+            
+            try {
+                if (typeof window.confirmGroupDeletion === 'function') {
+                    await window.confirmGroupDeletion(currentGroup.id || currentGroup.supabaseId);
+                    showNotification('You confirmed deletion. You will be removed from the group.', 'info');
+                    closeDeletionConfirmationModal();
+                    
+                    // Reload group or redirect
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 2000);
+                } else {
+                    throw new Error('Confirm deletion function not available');
+                }
+            } catch (error) {
+                console.error('Failed to confirm deletion:', error);
+                showNotification('Failed to confirm deletion. Please try again.', 'error');
+            }
+        }
+
+        async function handleRestoreGroup() {
+            if (!currentGroup || !window.currentUser) return;
+            
+            try {
+                if (typeof window.restoreGroup === 'function') {
+                    await window.restoreGroup(currentGroup.id || currentGroup.supabaseId);
+                    showNotification('Group restoration requested. The creator will be notified.', 'success');
+                    closeDeletionConfirmationModal();
+                    
+                    // Reload group to update status
+                    await loadGroupData(currentGroup.id || currentGroup.supabaseId);
+                } else {
+                    throw new Error('Restore group function not available');
+                }
+            } catch (error) {
+                console.error('Failed to restore group:', error);
+                showNotification('Failed to restore group. Please try again.', 'error');
+            }
         }
 
         // safeUpdateElement is now in shared-utils.js
@@ -1009,9 +1262,9 @@
                             <div class="expense-content">
                                 <div class="expense-info">
                                     <div class="expense-title-row">
-                                        <h4>${expense.name}</h4>
+                                    <h4>${expense.name}</h4>
                                         <div class="expense-amount">${formatCurrency(expense.amount)}</div>
-                                    </div>
+                                </div>
                                     <div class="expense-meta-row">
                                         <span class="expense-meta">Paid by ${expense.paidBy} • Split between ${expense.splitBetween?.join(', ') || 'Unknown'}</span>
                                         <span class="expense-date">${formatDate(expense.date)}</span>
@@ -1066,9 +1319,11 @@
             }
 
             // Calculate individual balances
+            // Combine registered members (IDs) and participants (names) for display
+            const allPeople = getAllGroupPeopleSync(currentGroup);
             const balances = {};
-            currentGroup.members.forEach(member => {
-                balances[member] = 0;
+            allPeople.forEach(person => {
+                balances[person] = 0;
             });
 
             currentGroup.expenses.forEach(expense => {
@@ -1144,7 +1399,7 @@
                             <span class="settlement-from-name">${settlement.from}</span>
                             <span class="settlement-arrow-modern">→</span>
                             <span class="settlement-to-name">${settlement.to}</span>
-                        </div>
+                            </div>
                         <div class="settlement-amount-modern">${formatCurrency(settlement.amount)}</div>
                     </div>
                 `).join('');
@@ -1167,19 +1422,21 @@
 
             if (modal) modal.style.display = 'block';
 
-            // Populate paid by dropdown
+            // Populate paid by dropdown - combine members and participants (use names)
             if (paidBySelect && currentGroup) {
+                const allPeople = getAllGroupPeopleSync(currentGroup);
                 paidBySelect.innerHTML = '<option value="">Select who paid</option>' +
-                    currentGroup.members.map(member => 
-                        `<option value="${member}">${member}</option>`
+                    allPeople.map(person => 
+                        `<option value="${person}">${person}</option>`
                     ).join('');
             }
 
-            // Populate split between grid
+            // Populate split between grid - combine members and participants (use names)
             if (splitGrid && currentGroup) {
-                splitGrid.innerHTML = currentGroup.members.map(member => 
-                    `<div class="selectable-box selected" data-member="${member}">
-                        ${member}
+                const allPeople = getAllGroupPeopleSync(currentGroup);
+                splitGrid.innerHTML = allPeople.map(person => 
+                    `<div class="selectable-box selected" data-member="${person}">
+                        ${person}
                     </div>`
                 ).join('');
             }
@@ -1288,24 +1545,24 @@
                 await window.syncExpenseToDatabase(newExpense, currentGroup.id);
                 
                 // CRITICAL: Save to storage cache
-                updateGroupInStorage();
+            updateGroupInStorage();
 
-                // Update UI
-                displayExpenses();
-                calculateBalances();
-                safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses));
+            // Update UI
+            displayExpenses();
+            calculateBalances();
+            safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses));
 
-                // Close modal
-                closeAddExpenseModal();
-                
+            // Close modal
+            closeAddExpenseModal();
+
                 showNotification('Expense added successfully!', 'success');
                 
                 // Reload group from Supabase to ensure sync
                 await loadGroupData(currentGroup.id);
-            } catch (error) {
+                } catch (error) {
                 console.error('Failed to save expense:', error);
                 showNotification('Failed to save expense. Please check your connection.', 'error');
-            }
+                }
         }
 
         // ========================================
@@ -1322,16 +1579,17 @@
             document.getElementById('editExpenseAmount').value = expense.amount;
 
             const paidBySelect = document.getElementById('editExpensePaidBy');
+            const allPeople = getAllGroupPeopleSync(currentGroup);
             paidBySelect.innerHTML = '<option value="">Select who paid</option>' +
-                currentGroup.members.map(member => 
-                    `<option value="${member}" ${member === expense.paidBy ? 'selected' : ''}>${member}</option>`
+                allPeople.map(person => 
+                    `<option value="${person}" ${person === expense.paidBy ? 'selected' : ''}>${person}</option>`
                 ).join('');
 
             // Populate split between grid
             const splitGrid = document.getElementById('editExpenseSplitGrid');
-            splitGrid.innerHTML = currentGroup.members.map(member => 
-                `<div class="selectable-box ${expense.splitBetween?.includes(member) ? 'selected' : ''}" data-member="${member}">
-                    ${member}
+            splitGrid.innerHTML = allPeople.map(person => 
+                `<div class="selectable-box ${expense.splitBetween?.includes(person) ? 'selected' : ''}" data-member="${person}">
+                    ${person}
                 </div>`
             ).join('');
 
@@ -1410,7 +1668,7 @@
                 displayExpenses();
                 calculateBalances();
                 safeUpdateElement('totalExpensesAmount', formatCurrency(currentGroup.totalExpenses));
-                
+
                 showNotification('Expense updated successfully!', 'success');
                 
                 // Reload group from Supabase to ensure sync
@@ -1443,7 +1701,7 @@
 
                 showNotification('Deleting expense from cloud...', 'info');
                 await window.deleteExpenseFromDatabase(expenseId);
-                
+
                 // Delete from local data
                 const expenseIndex = currentGroup.expenses.findIndex(e => e.id === expenseId);
                 if (expenseIndex !== -1) {
@@ -1511,16 +1769,18 @@
                                    members.some(m => m && String(m).toLowerCase() === String(userName).toLowerCase());
             
             if (!isAlreadyMember) {
-                // Determine if members array uses IDs or names
-                // If members are all user IDs (contain 'user' or are long strings), add ID
-                // Otherwise, add name
-                const usesIds = members.length > 0 && members.some(m => String(m).length > 10 || String(m).includes('user'));
-                if (usesIds) {
-                    fetchedGroup.members.push(userId);
-                    console.log('Added user ID to members:', userId);
-                } else {
-                    fetchedGroup.members.push(userName);
-                    console.log('Added user name to members:', userName);
+                // ALWAYS use user ID when joining (IDs are unique and reliable)
+                // This ensures the user can be properly identified across the system
+                fetchedGroup.members.push(userId);
+                console.log('Added user ID to members:', userId);
+                
+                // Remove user's name if it exists (migrate from name to ID for consistency)
+                const nameIndex = fetchedGroup.members.findIndex(m => 
+                    String(m).toLowerCase() === String(userName).toLowerCase()
+                );
+                if (nameIndex >= 0 && fetchedGroup.members[nameIndex] !== userId) {
+                    fetchedGroup.members.splice(nameIndex, 1);
+                    console.log('Removed duplicate name entry, using ID instead');
                 }
             }
 
@@ -1556,7 +1816,7 @@
             // Set as current group
             currentGroup = fetchedGroup;
             window.currentGroup = fetchedGroup;
-            updateGroupDisplay();
+            await updateGroupDisplay();
 
             // Start real-time sync for this group
             if (typeof window.startRealtimeSync === 'function') {
@@ -1627,9 +1887,11 @@
                 return;
             }
 
-            grid.innerHTML = group.members.map(member => `
-                <div class="selectable-box selected" data-member="${member}">
-                    ${member}
+            // Show both registered members and participants for editing (use names)
+            const allPeople = getAllGroupPeopleSync(group);
+            grid.innerHTML = allPeople.map(person => `
+                <div class="selectable-box selected" data-member="${person}">
+                    ${person}
                 </div>
             `).join('');
         }
@@ -1707,9 +1969,9 @@
 
             const dynamicMembers = Array.from(document.querySelectorAll('#editGroupDynamicMembers .dynamic-item-name')).map(el => el.textContent);
 
-            const allMembers = [...selectedMembers, ...dynamicMembers];
+            const allPeople = [...selectedMembers, ...dynamicMembers];
 
-            if (!groupName || allMembers.length < 2) {
+            if (!groupName || allPeople.length < 2) {
                 showNotification('Please provide group name and at least two members', 'error');
                 return;
             }
@@ -1717,9 +1979,21 @@
             try {
                 const group = window.currentGroup || currentGroup;
 
+                // Separate registered user IDs from non-registered participant names
+                // Keep existing registered user IDs in members array
+                const existingMemberIds = Array.isArray(group.members) ? group.members : [];
+                
+                // All entered names are participants (non-registered)
+                // Registered user IDs are only added when users join via shared link
+                const participants = allPeople.filter(person => 
+                    !existingMemberIds.includes(person) && 
+                    !existingMemberIds.some(id => String(id).toLowerCase() === String(person).toLowerCase())
+                );
+
                 // Update group data
                 group.name = groupName;
-                group.members = allMembers;
+                group.members = existingMemberIds;  // Keep registered user IDs
+                group.participants = participants;  // Update non-registered participant names
 
                 // Update both references
                 currentGroup = group;
@@ -1741,7 +2015,7 @@
                 updateGroupInStorage();
 
                 // Update UI
-                updateGroupDisplay();
+                await updateGroupDisplay();
 
                 closeEditGroupModal();
                 showNotification('Group updated successfully!');
@@ -1757,39 +2031,79 @@
             document.getElementById('editGroupDynamicMembers').innerHTML = '';
         }
 
-        // FIXED: Delete group with database sync
+        // FIXED: Delete group with database sync - only creator can delete
         async function deleteGroupConfirm() {
             if (!currentGroup) {
                 showNotification('No group to delete', 'error');
                 return;
             }
 
-            if (!confirm(`Are you sure you want to delete the group "${currentGroup.name}"? All expenses will be lost forever!`)) return;
+            // Check if current user is the creator (by ID)
+            const creatorId = currentGroup.createdBy || currentGroup.created_by;
+            if (!window.currentUser || window.currentUser.id !== creatorId) {
+                const creatorName = await getUserNameFromId(creatorId);
+                showNotification(`Only ${creatorName} (the creator) can delete this group`, 'error');
+                return;
+            }
+
+            // Check if group has other members
+            const members = currentGroup.members || [];
+            const participants = currentGroup.participants || [];
+            const allPeopleCount = members.length + participants.length;
+            
+            // If only creator is a member (no other members), delete immediately
+            if (members.length === 1 && members[0] === window.currentUser.id && participants.length === 0) {
+                if (!confirm(`Are you sure you want to delete the group "${currentGroup.name}"? All expenses will be lost forever!`)) return;
+                
+                try {
+                    // Delete immediately (force delete)
+                    if (typeof window.deleteGroupFromDatabase === 'function') {
+                        await window.deleteGroupFromDatabase(currentGroupId, true); // Force delete
+                        console.log('Group and all expenses deleted from database');
+                    }
+
+                    // Delete from local storage
+                    const groups = loadFromLocalStorage().filter(g => g.id !== currentGroupId && g.supabaseId !== currentGroupId);
+                    saveGroupsToLocalStorage(groups);
+                    console.log('Group removed from localStorage');
+
+                    showNotification('Group and all expenses deleted successfully!', 'success');
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 1500);
+                } catch (error) {
+                    console.error('Failed to delete group:', error);
+                    showNotification('Failed to delete group from cloud. Deleted locally only.', 'warning');
+
+                    const groups = loadFromLocalStorage().filter(g => g.id !== currentGroupId && g.supabaseId !== currentGroupId);
+                    saveGroupsToLocalStorage(groups);
+
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 1500);
+                }
+                return;
+            }
+
+            // Group has other members - initiate collaborative deletion
+            const memberCount = members.length;
+            if (!confirm(`This group has ${memberCount} member(s). Other members will be notified and must confirm deletion.\n\nDo you want to initiate group deletion?`)) return;
 
             try {
-                // Delete from database first (if online)
+                // Mark group for collaborative deletion
                 if (typeof window.deleteGroupFromDatabase === 'function') {
-                    await window.deleteGroupFromDatabase(currentGroupId);
+                    await window.deleteGroupFromDatabase(currentGroupId, false); // Collaborative deletion
+                    console.log('Group marked for collaborative deletion');
+                    
+                    showNotification('Group deletion initiated. Other members will be notified to confirm.', 'info');
+                    // Reload group to show pending deletion status
+                    await loadGroupData(currentGroupId);
+                } else {
+                    throw new Error('Delete function not available');
                 }
-
-                // Delete from local storage
-                const groups = loadFromLocalStorage().filter(g => g.id !== currentGroupId);
-                saveGroupsToLocalStorage(groups);
-
-                showNotification('Group deleted successfully!');
-                setTimeout(() => {
-                    window.location.href = 'index.html';
-                }, 1500);
             } catch (error) {
-                console.error('Failed to delete group:', error);
-                showNotification('Failed to delete group from cloud. Deleted locally only.', 'warning');
-
-                const groups = loadFromLocalStorage().filter(g => g.id !== currentGroupId);
-                saveGroupsToLocalStorage(groups);
-
-                setTimeout(() => {
-                    window.location.href = 'index.html';
-                }, 1500);
+                console.error('Failed to initiate group deletion:', error);
+                showNotification('Failed to initiate group deletion. Please try again.', 'error');
             }
         }
 
@@ -1799,7 +2113,7 @@
             if (detailsView && detailsView.style.display !== 'none') {
                 hideDetailsView();
             } else {
-                window.location.href = 'index.html';
+            window.location.href = 'index.html';
             }
         }
 

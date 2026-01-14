@@ -693,8 +693,9 @@
                 if (typeof window.deleteUserFromDatabase === 'function') {
                     try {
                         console.log('Attempting database deletion for user:', userId);
+                        console.log('This will delete ALL groups created by this user and ALL expenses in those groups');
                         await window.deleteUserFromDatabase(userId);
-                        console.log('Database deletion successful');
+                        console.log('Database deletion successful - user, groups, and expenses deleted');
                     } catch (dbError) {
                         console.warn('Database deletion failed:', dbError);
                         showNotification(`Cloud deletion failed for "${userName}", but local data will be cleared`, 'warning');
@@ -707,12 +708,13 @@
                 let updatedPreviousUsers = getPreviousUsers().filter(user => user.id !== userId);
                 localStorage.setItem('spliteasy_previous_users', JSON.stringify(updatedPreviousUsers));
 
-                // If this was the current user, clear their session
+                // If this was the current user, clear ALL their data
                 if (window.currentUser?.id === userId) {
                     localStorage.removeItem('spliteasy_current_user');
-                    localStorage.removeItem('spliteasy_groups');
+                    localStorage.removeItem('spliteasy_groups');  // This removes all groups and their expenses
                     window.currentUser = null;
                     window.groups = [];
+                    console.log('All user data cleared from localStorage');
 
                     showNotification(`Account "${userName}" deleted successfully`, 'success');
 
@@ -811,11 +813,21 @@
                             // Also check if user is the creator
                             const isCreator = localGroup.createdBy === userId || localGroup.created_by === userId;
                             
+                            // IMPORTANT: User sees group only if they are creator OR in members array
+                            // If removed from members, they won't see it (unless they're the creator)
                             if (isMember || isCreator) {
                                 mergedGroups.push(localGroup);
                                 console.log('✅ Adding local group to list:', localGroup.name, 'User:', userId, 'Members:', members);
                             } else {
                                 console.log('❌ Skipping local group (user not a member):', localGroup.name, 'User:', userId, 'Name:', userName, 'Members:', members, 'CreatedBy:', localGroup.createdBy || localGroup.created_by);
+                                
+                                // Also remove from localStorage if user is no longer a member
+                                const allLocalGroups = loadFromLocalStorage();
+                                const filteredGroups = allLocalGroups.filter(g => g.id !== localGroup.id && g.supabaseId !== localGroup.id);
+                                if (filteredGroups.length < allLocalGroups.length) {
+                                    saveGroupsToLocalStorage(filteredGroups);
+                                    console.log('Removed group from localStorage (user is no longer a member)');
+                                }
                             }
                         } else {
                             console.log('ℹ️ Local group already in DB:', localGroup.name);
@@ -1091,10 +1103,16 @@
                 return;
             }
 
+            // Separate registered users from non-registered participants
+            // When creating a group:
+            // - members: Array of registered user IDs (creator + users who join via shared link)
+            // - participants: Array of non-registered member names (for expense splitting)
+            // All names entered during creation go to participants (these are used for "who paid" and "split between")
             const newGroup = {
                 id: generateId(),
                 name: groupName,
-                members: allMembers,
+                members: [window.currentUser.id],  // Creator's ID is in members (for permissions)
+                participants: allMembers,  // ALL entered names go to participants (for expense splitting)
                 expenses: [],
                 totalExpenses: 0,
                 createdAt: new Date().toISOString(),

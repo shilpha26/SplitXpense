@@ -239,18 +239,37 @@ window.deleteUserFromDatabase = async function(userId) {
 
     try {
         console.log('Deleting user from database:', userId);
+        console.log('This will delete ALL groups created by this user and ALL expenses in those groups');
 
-        // Delete user's expenses first (use created_by column)
-        const { error: expenseError } = await window.supabaseClient
-            .from('expenses')
-            .delete()
+        // Step 1: Get all groups created by this user
+        const { data: userGroups, error: fetchGroupsError } = await window.supabaseClient
+            .from('groups')
+            .select('id')
             .eq('created_by', userId);
 
-        if (expenseError) {
-            console.warn('Failed to delete user expenses:', expenseError);
+        if (fetchGroupsError) {
+            console.warn('Failed to fetch user groups:', fetchGroupsError);
         }
 
-        // Delete user's groups (use created_by column)
+        // Step 2: Delete ALL expenses in groups created by this user
+        // (This includes expenses created by other users in the group)
+        if (userGroups && userGroups.length > 0) {
+            const groupIds = userGroups.map(g => g.id);
+            console.log(`Deleting all expenses from ${groupIds.length} groups...`);
+            
+            const { error: expenseError } = await window.supabaseClient
+                .from('expenses')
+                .delete()
+                .in('group_id', groupIds);
+
+            if (expenseError) {
+                console.warn('Failed to delete expenses from user groups:', expenseError);
+            } else {
+                console.log('All expenses in user groups deleted successfully');
+            }
+        }
+
+        // Step 3: Delete user's groups (this will also cascade delete any remaining expenses)
         const { error: groupError } = await window.supabaseClient
             .from('groups')
             .delete()
@@ -258,9 +277,21 @@ window.deleteUserFromDatabase = async function(userId) {
 
         if (groupError) {
             console.warn('Failed to delete user groups:', groupError);
+        } else {
+            console.log('User groups deleted successfully');
         }
 
-        // Delete user
+        // Step 4: Delete any remaining expenses created by this user (in groups they didn't create)
+        const { error: remainingExpenseError } = await window.supabaseClient
+            .from('expenses')
+            .delete()
+            .eq('created_by', userId);
+
+        if (remainingExpenseError) {
+            console.warn('Failed to delete remaining user expenses:', remainingExpenseError);
+        }
+
+        // Step 5: Delete user record
         const { error: userError } = await window.supabaseClient
             .from('users')
             .delete()
@@ -270,7 +301,7 @@ window.deleteUserFromDatabase = async function(userId) {
             throw userError;
         }
 
-        console.log('User deleted from database successfully');
+        console.log('User and all associated data deleted from database successfully');
         return true;
     } catch (error) {
         console.error('Failed to delete user:', error);
