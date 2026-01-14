@@ -22,6 +22,7 @@
                 </div>
                 <div class="user-info">
                     <span id="currentUserName">Loading...</span>
+                    <button class="btn-link" onclick="showEditUserNameModal()" title="Edit Name">✎</button>
                     <button class="btn-link" onclick="showChangeUserModal()">Change User</button>
                 </div>
             </div>
@@ -89,6 +90,26 @@
                         <button type="button" class="btn-success" onclick="createUser()" id="continueBtn" disabled>Continue</button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Name Modal -->
+    <div id="editUserNameModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Your Name</h3>
+                <span class="close" onclick="closeEditUserNameModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="editUserNameInput">Your Name</label>
+                    <input type="text" id="editUserNameInput" placeholder="Enter your name" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeEditUserNameModal()">Cancel</button>
+                <button type="button" class="btn-success" onclick="saveUserName()">Save</button>
             </div>
         </div>
     </div>
@@ -290,6 +311,97 @@
         function showChangeUserModal() {
             const previousUsers = getPreviousUsers();
             showUserLoginModal(previousUsers.length > 0);
+        }
+
+        // Show edit user name modal
+        function showEditUserNameModal() {
+            if (!window.currentUser) {
+                showNotification('Please log in first', 'error');
+                showChangeUserModal();
+                return;
+            }
+
+            const modal = document.getElementById('editUserNameModal');
+            const nameInput = document.getElementById('editUserNameInput');
+            
+            if (modal && nameInput) {
+                nameInput.value = window.currentUser.name || '';
+                modal.style.display = 'block';
+                // Focus on input after modal is shown
+                setTimeout(() => nameInput.focus(), 100);
+            }
+        }
+
+        // Close edit user name modal
+        function closeEditUserNameModal() {
+            const modal = document.getElementById('editUserNameModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        // Save user name changes
+        async function saveUserName() {
+            if (!window.currentUser) {
+                showNotification('Please log in first', 'error');
+                return;
+            }
+
+            const nameInput = document.getElementById('editUserNameInput');
+            const newName = nameInput?.value.trim();
+
+            if (!newName) {
+                showNotification('Please enter a name', 'error');
+                return;
+            }
+
+            if (newName === window.currentUser.name) {
+                closeEditUserNameModal();
+                return; // No change
+            }
+
+            try {
+                // Update current user
+                window.currentUser.name = newName;
+                localStorage.setItem('spliteasy_current_user', JSON.stringify(window.currentUser));
+
+                // Update in previous users list
+                const previousUsers = getPreviousUsers();
+                const userIndex = previousUsers.findIndex(u => u.id === window.currentUser.id);
+                if (userIndex >= 0) {
+                    previousUsers[userIndex].name = newName;
+                    previousUsers[userIndex].lastUsed = Date.now();
+                    localStorage.setItem('spliteasy_previous_users', JSON.stringify(previousUsers));
+                } else {
+                    // Add to previous users if not there
+                    storePreviousUser(window.currentUser);
+                }
+
+                // Update in database if available
+                if (window.supabaseClient && typeof window.syncUserToDatabase === 'function') {
+                    try {
+                        await window.syncUserToDatabase(window.currentUser);
+                        console.log('User name updated in database');
+                    } catch (dbError) {
+                        console.warn('Failed to update user name in database:', dbError);
+                        // Continue anyway - local update succeeded
+                    }
+                }
+
+                // Update UI
+                document.getElementById('currentUserName').textContent = newName;
+                closeEditUserNameModal();
+                showNotification('Name updated successfully!', 'success');
+
+                // Invalidate cache to refresh any cached user data
+                if (typeof invalidateGroupsCache === 'function') {
+                    invalidateGroupsCache();
+                }
+
+            } catch (error) {
+                console.error('Failed to update user name:', error);
+                showNotification('Failed to update name. Please try again.', 'error');
+            }
         }
 
         // Setup User ID input validation

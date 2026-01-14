@@ -812,13 +812,24 @@
                             }
                             saveGroupsToLocalStorage(localGroups);
                             
+                            // Check if user was already a member BEFORE joining
+                            const groupMembersBeforeJoin = structuredGroup.members || [];
+                            const wasAlreadyMember = groupMembersBeforeJoin.includes(window.currentUser.id) ||
+                                                    groupMembersBeforeJoin.some(m => m && String(m).toLowerCase() === String(window.currentUser.id).toLowerCase());
+                            
+                            // Only join if not already a member
+                            let actuallyJoined = false;
+                            if (!wasAlreadyMember && typeof window.joinUserToGroup === 'function') {
+                                const joinResult = await window.joinUserToGroup(groupId, window.currentUser.id);
+                                if (joinResult && (typeof joinResult === 'object' ? joinResult.wasNewMember : true)) {
+                                    actuallyJoined = true;
+                                }
+                            }
+                            
                             await updateGroupDisplay();
                             
-                            // Only show notification if user was newly joined (not already a member)
-                            const groupMembers = structuredGroup.members || [];
-                            const isAlreadyMember = groupMembers.includes(window.currentUser.id) ||
-                                                   groupMembers.some(m => m && String(m).toLowerCase() === String(window.currentUser.id).toLowerCase());
-                            if (!isAlreadyMember) {
+                            // Only show notification if user actually joined (was not already a member)
+                            if (actuallyJoined) {
                                 showNotification('Joined group successfully!', 'success');
                             }
                             return; // IMPORTANT: Return here to prevent falling through to error handler
@@ -1780,41 +1791,25 @@
 
         async function joinGroupFromSharedLink(fetchedGroup, groupId) {
             // Add user to local group data first
-            // Check if members array contains IDs or names
+            // Check if user is already a member BEFORE attempting to join
             const members = fetchedGroup.members || [];
             const userId = window.currentUser.id;
             const userName = window.currentUser.name;
             
             // Check if user is already a member (by ID or name)
-            const isAlreadyMember = members.includes(userId) || 
-                                   members.includes(userName) ||
-                                   members.some(m => m && String(m).toLowerCase() === String(userId).toLowerCase()) ||
-                                   members.some(m => m && String(m).toLowerCase() === String(userName).toLowerCase());
+            const userAlreadyMember = members.includes(userId) || 
+                                     members.includes(userName) ||
+                                     members.some(m => m && String(m).toLowerCase() === String(userId).toLowerCase()) ||
+                                     members.some(m => m && String(m).toLowerCase() === String(userName).toLowerCase());
             
-            if (!isAlreadyMember) {
-                // ALWAYS use user ID when joining (IDs are unique and reliable)
-                // This ensures the user can be properly identified across the system
-                fetchedGroup.members.push(userId);
-                console.log('Added user ID to members:', userId);
-                
-                // Remove user's name if it exists (migrate from name to ID for consistency)
-                const nameIndex = fetchedGroup.members.findIndex(m => 
-                    String(m).toLowerCase() === String(userName).toLowerCase()
-                );
-                if (nameIndex >= 0 && fetchedGroup.members[nameIndex] !== userId) {
-                    fetchedGroup.members.splice(nameIndex, 1);
-                    console.log('Removed duplicate name entry, using ID instead');
-                }
-            }
-
-            // Join user to group in database
+            // Join user to group in database (only if not already a member)
             let wasNewlyJoined = false;
-            if (typeof window.joinUserToGroup === 'function') {
+            if (!userAlreadyMember && typeof window.joinUserToGroup === 'function') {
                 const result = await window.joinUserToGroup(groupId, window.currentUser.id);
                 if (!result || (typeof result === 'object' && !result.joined)) {
                     console.warn('Failed to join group in database, but continuing with local access');
                 } else {
-                    wasNewlyJoined = typeof result === 'object' ? result.wasNewMember : true;
+                    wasNewlyJoined = typeof result === 'object' ? result.wasNewMember : false;
                     console.log(wasNewlyJoined ? 'User successfully added to group in database' : 'User is already a member of this group');
                     // After joining, sync the entire group to ensure consistency
                     if (typeof window.syncGroupToDatabase === 'function') {
@@ -1826,6 +1821,8 @@
                         }
                     }
                 }
+            } else if (userAlreadyMember) {
+                console.log('User is already a member, skipping join');
             }
 
             // CRITICAL: Save group locally with proper structure
