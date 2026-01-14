@@ -1,5 +1,5 @@
 // Force cache update by incrementing version
-const CACHE_VERSION = 'spliteasy-v1768230000000'; // Fixed cache.addAll to individual cache.add calls
+const CACHE_VERSION = 'spliteasy-v1768240000000'; // Fixed saveGroupsToLocalStorage error and improved delete handling
 const CACHE_NAME = CACHE_VERSION;
 
 console.log('🔄 SplitEasy Service Worker Loading with cache:', CACHE_NAME);

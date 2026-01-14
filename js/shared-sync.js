@@ -983,14 +983,24 @@ async function deleteGroupFromDatabase(groupId, forceDelete = false) {
         console.log('Marking group for collaborative deletion:', groupId);
         
         // Fetch current group to check members
+        // Use .maybeSingle() to handle cases where group might already be deleted
         const { data: group, error: fetchError } = await window.supabaseClient
             .from('groups')
             .select('*')
             .eq(groupSchema.id, groupId)
-            .single();
+            .maybeSingle();
 
-        if (fetchError || !group) {
-            throw new Error('Group not found');
+        if (fetchError) {
+            // Check for specific error codes
+            if (fetchError.code === 'PGRST116' || fetchError.message?.includes('406')) {
+                console.warn('Group not found or already deleted:', groupId);
+                throw new Error('Group not found or already deleted');
+            }
+            throw fetchError;
+        }
+
+        if (!group) {
+            throw new Error('Group not found or already deleted');
         }
 
         // Get members array
@@ -1733,5 +1743,8 @@ window.debugSync = function() {
 
 // Export SCHEMA_MAPPING to window for access from other scripts
 window.SCHEMA_MAPPING = SCHEMA_MAPPING;
+
+// Export saveGroupsToLocalStorageSafe for use in other scripts
+window.saveGroupsToLocalStorageSafe = saveGroupsToLocalStorageSafe;
 
 console.log('Database schema-aware SplitEasy sync system loaded successfully');

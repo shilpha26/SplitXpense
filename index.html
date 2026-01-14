@@ -864,7 +864,21 @@
                             });
                         });
                         if (filteredGroups.length < allLocalGroups.length) {
-                            saveGroupsToLocalStorage(filteredGroups);
+                            // Save filtered groups to localStorage
+                            if (typeof window.saveGroupsToLocalStorageSafe === 'function') {
+                                window.saveGroupsToLocalStorageSafe(filteredGroups);
+                            } else {
+                                // Fallback: direct save
+                                try {
+                                    localStorage.setItem('spliteasy_groups', JSON.stringify(filteredGroups));
+                                    if (typeof invalidateGroupsCache === 'function') {
+                                        invalidateGroupsCache();
+                                    }
+                                } catch (error) {
+                                    console.error('Failed to save filtered groups to localStorage:', error);
+                                    return;
+                                }
+                            }
                             console.log('Removed', allLocalGroups.length - filteredGroups.length, 'group(s) from localStorage (not in DB or user not a member)');
                         }
                     }
@@ -1486,10 +1500,25 @@
                 }
 
                 showNotification('Deleting group from cloud...', 'info');
-                await window.deleteGroupFromDatabase(editingGroupId);
                 
-                // Delete from local array and cache
-                window.groups = window.groups.filter(g => g.id !== editingGroupId);
+                try {
+                    await window.deleteGroupFromDatabase(editingGroupId);
+                } catch (error) {
+                    // If group is already deleted or not found, just remove from local storage
+                    if (error.message?.includes('not found') || error.message?.includes('already deleted')) {
+                        console.warn('Group already deleted from database, removing from local storage');
+                        showNotification('Group was already deleted', 'info');
+                    } else {
+                        throw error; // Re-throw other errors
+                    }
+                }
+                
+                // Delete from local array and cache (always do this, even if DB delete failed)
+                window.groups = window.groups.filter(g => {
+                    const gId = g.id || g.supabaseId;
+                    const gSupabaseId = g.supabaseId || g.id;
+                    return gId !== editingGroupId && gSupabaseId !== editingGroupId;
+                });
                 saveToLocalStorage();
                 displayGroups();
                 closeEditGroupModal();
@@ -1500,7 +1529,20 @@
                 await loadGroups();
             } catch (error) {
                 console.error('Failed to delete group:', error);
-                showNotification('Failed to delete group. Please check your connection.', 'error');
+                // Still remove from local storage if it's a "not found" error
+                if (error.message?.includes('not found') || error.message?.includes('already deleted')) {
+                    window.groups = window.groups.filter(g => {
+                        const gId = g.id || g.supabaseId;
+                        const gSupabaseId = g.supabaseId || g.id;
+                        return gId !== editingGroupId && gSupabaseId !== editingGroupId;
+                    });
+                    saveToLocalStorage();
+                    displayGroups();
+                    closeEditGroupModal();
+                    showNotification('Group removed from local storage', 'info');
+                } else {
+                    showNotification('Failed to delete group. Please check your connection.', 'error');
+                }
             }
         }
 
@@ -1522,10 +1564,25 @@
                 }
 
                 showNotification('Deleting group from cloud...', 'info');
-                await window.deleteGroupFromDatabase(groupId);
                 
-                // Delete from local array and cache
-                window.groups = window.groups.filter(g => g.id !== groupId);
+                try {
+                    await window.deleteGroupFromDatabase(groupId);
+                } catch (error) {
+                    // If group is already deleted or not found, just remove from local storage
+                    if (error.message?.includes('not found') || error.message?.includes('already deleted')) {
+                        console.warn('Group already deleted from database, removing from local storage');
+                        showNotification('Group was already deleted', 'info');
+                    } else {
+                        throw error; // Re-throw other errors
+                    }
+                }
+                
+                // Delete from local array and cache (always do this, even if DB delete failed)
+                window.groups = window.groups.filter(g => {
+                    const gId = g.id || g.supabaseId;
+                    const gSupabaseId = g.supabaseId || g.id;
+                    return gId !== groupId && gSupabaseId !== groupId;
+                });
                 saveToLocalStorage();
                 displayGroups();
                 showNotification('Group deleted successfully', 'success');
@@ -1534,7 +1591,19 @@
                 await loadGroups();
             } catch (error) {
                 console.error('Failed to delete group:', error);
-                showNotification('Failed to delete group. Please check your connection.', 'error');
+                // Still remove from local storage if it's a "not found" error
+                if (error.message?.includes('not found') || error.message?.includes('already deleted')) {
+                    window.groups = window.groups.filter(g => {
+                        const gId = g.id || g.supabaseId;
+                        const gSupabaseId = g.supabaseId || g.id;
+                        return gId !== groupId && gSupabaseId !== groupId;
+                    });
+                    saveToLocalStorage();
+                    displayGroups();
+                    showNotification('Group removed from local storage', 'info');
+                } else {
+                    showNotification('Failed to delete group. Please check your connection.', 'error');
+                }
             }
         }
 
