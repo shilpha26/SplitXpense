@@ -1000,7 +1000,7 @@
                         <div class="group-info">
                             <h3>${group.name}</h3>
                             <div class="group-meta">
-                                <span>${group.members.length} members</span>
+                                <span>${group.participants?.length || 0} members</span>
                                 <span>${group.expenses?.length || 0} expenses</span>
                                 <span>Created ${formatDate(group.createdAt)}</span>
                             </div>

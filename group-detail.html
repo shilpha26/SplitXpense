@@ -1112,7 +1112,7 @@
             
             // Check if group is pending deletion
             const pendingDeletion = currentGroup.pendingDeletion || currentGroup.pending_deletion;
-            let metaText = `${(currentGroup.members?.length || 0) + (currentGroup.participants?.length || 0)} members • ${currentGroup.expenses?.length || 0} expenses • Created by ${creatorName} • ${formatDate(currentGroup.createdAt)}`;
+            let metaText = `${currentGroup.participants?.length || 0} members • ${currentGroup.expenses?.length || 0} expenses • Created by ${creatorName} • ${formatDate(currentGroup.createdAt)}`;
             
             if (pendingDeletion) {
                 metaText += ' • ⚠️ Pending Deletion';
@@ -1878,7 +1878,7 @@
         function setupEditGroupMembers() {
             const group = window.currentGroup || currentGroup;
 
-            if (!group || !group.members) {
+            if (!group) {
                 return;
             }
 
@@ -1887,9 +1887,21 @@
                 return;
             }
 
-            // Show both registered members and participants for editing (use names)
-            const allPeople = getAllGroupPeopleSync(group);
-            grid.innerHTML = allPeople.map(person => `
+            // Clear dynamic members container
+            const dynamicContainer = document.getElementById('editGroupDynamicMembers');
+            if (dynamicContainer) {
+                dynamicContainer.innerHTML = '';
+            }
+
+            // Show only participants (manually added names), not registered members
+            const participants = Array.isArray(group.participants) ? group.participants : [];
+            
+            if (participants.length === 0) {
+                grid.innerHTML = '<p style="color: var(--text-secondary); padding: 1rem;">No participants yet. Add participants below.</p>';
+                return;
+            }
+            
+            grid.innerHTML = participants.map(person => `
                 <div class="selectable-box selected" data-member="${person}">
                     ${person}
                 </div>
@@ -1979,21 +1991,17 @@
             try {
                 const group = window.currentGroup || currentGroup;
 
-                // Separate registered user IDs from non-registered participant names
-                // Keep existing registered user IDs in members array
+                // Keep existing registered member IDs (users who joined via shared link)
+                // Since edit modal only shows participants, all entered names are participants
                 const existingMemberIds = Array.isArray(group.members) ? group.members : [];
                 
-                // All entered names are participants (non-registered)
-                // Registered user IDs are only added when users join via shared link
-                const participants = allPeople.filter(person => 
-                    !existingMemberIds.includes(person) && 
-                    !existingMemberIds.some(id => String(id).toLowerCase() === String(person).toLowerCase())
-                );
+                // All entered names are participants (remove duplicates)
+                const participantNames = [...new Set(allPeople)];
 
                 // Update group data
                 group.name = groupName;
-                group.members = existingMemberIds;  // Keep registered user IDs
-                group.participants = participants;  // Update non-registered participant names
+                group.members = existingMemberIds;  // Keep registered user IDs unchanged
+                group.participants = participantNames;  // Update participant names only
 
                 // Update both references
                 currentGroup = group;
