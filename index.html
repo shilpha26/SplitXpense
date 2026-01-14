@@ -1000,7 +1000,22 @@
                         <div class="group-info">
                             <h3>${group.name}</h3>
                             <div class="group-meta">
-                                <span>${group.participants?.length || 0} members</span>
+                                <span>${(() => {
+                                    const participants = Array.isArray(group.participants) ? group.participants : [];
+                                    const memberIds = Array.isArray(group.members) ? group.members : [];
+                                    return participants.filter(p => {
+                                        if (typeof p !== 'string') return false;
+                                        // Filter out registered member IDs
+                                        if (memberIds.includes(p)) {
+                                            return false; // This is a registered member ID, not a participant
+                                        }
+                                        // Filter out UUIDs and IDs with "user" pattern
+                                        if (p.includes('user') || p.length > 30 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) {
+                                            return false; // This looks like an ID
+                                        }
+                                        return true; // This looks like a participant name
+                                    }).length;
+                                })()} members</span>
                                 <span>${group.expenses?.length || 0} expenses</span>
                                 <span>Created ${formatDate(group.createdAt)}</span>
                             </div>

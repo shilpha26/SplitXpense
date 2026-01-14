@@ -1112,7 +1112,23 @@
             
             // Check if group is pending deletion
             const pendingDeletion = currentGroup.pendingDeletion || currentGroup.pending_deletion;
-            let metaText = `${currentGroup.participants?.length || 0} members • ${currentGroup.expenses?.length || 0} expenses • Created by ${creatorName} • ${formatDate(currentGroup.createdAt)}`;
+            // Count only actual participant names (filter out IDs)
+            const participants = Array.isArray(currentGroup.participants) ? currentGroup.participants : [];
+            const memberIds = Array.isArray(currentGroup.members) ? currentGroup.members : [];
+            const participantCount = participants.filter(p => {
+                if (typeof p !== 'string') return false;
+                // Filter out registered member IDs
+                if (memberIds.includes(p)) {
+                    return false; // This is a registered member ID, not a participant
+                }
+                // Filter out UUIDs and IDs with "user" pattern
+                if (p.includes('user') || p.length > 30 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) {
+                    return false; // This looks like an ID
+                }
+                return true; // This looks like a participant name
+            }).length;
+            
+            let metaText = `${participantCount} members • ${currentGroup.expenses?.length || 0} expenses • Created by ${creatorName} • ${formatDate(currentGroup.createdAt)}`;
             
             if (pendingDeletion) {
                 metaText += ' • ⚠️ Pending Deletion';
@@ -1894,14 +1910,33 @@
             }
 
             // Show only participants (manually added names), not registered members
+            // Filter out IDs by checking if they match any registered member IDs
             const participants = Array.isArray(group.participants) ? group.participants : [];
+            const memberIds = Array.isArray(group.members) ? group.members : [];
             
-            if (participants.length === 0) {
+            const participantNames = participants.filter(p => {
+                // Filter out IDs - check if this matches any registered member ID
+                if (typeof p !== 'string') return false;
+                
+                // Check if this is a registered member ID
+                if (memberIds.includes(p)) {
+                    return false; // This is a registered member ID, not a participant name
+                }
+                
+                // Also filter out UUIDs and IDs with "user" pattern
+                if (p.includes('user') || p.length > 30 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) {
+                    return false; // This looks like an ID
+                }
+                
+                return true; // This looks like a participant name
+            });
+            
+            if (participantNames.length === 0) {
                 grid.innerHTML = '<p style="color: var(--text-secondary); padding: 1rem;">No participants yet. Add participants below.</p>';
                 return;
             }
             
-            grid.innerHTML = participants.map(person => `
+            grid.innerHTML = participantNames.map(person => `
                 <div class="selectable-box selected" data-member="${person}">
                     ${person}
                 </div>
