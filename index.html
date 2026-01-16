@@ -11,8 +11,24 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body>
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen" style="display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; background: #f8f9fa;">
+        <div style="text-align: center; padding: 2rem;">
+            <h1 style="color: #28a745; margin-bottom: 1rem;">SplitEasy</h1>
+            <p style="color: #666; margin-bottom: 2rem;">Share expenses, split the cost</p>
+            <div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #28a745; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+            <p id="loadingMessage" style="margin-top: 1rem; color: #666;">Initializing...</p>
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+        </div>
+    </div>
+
     <!-- Main App Content -->
-    <div id="mainAppContent">
+    <div id="mainAppContent" style="display: none;">
         <!-- Header -->
         <header>
             <div class="container">
@@ -206,9 +222,18 @@
     <!-- Notification -->
     <div id="notification" class="notification" style="display: none;"></div>
 
-    <!-- Scripts -->
+    <!-- Scripts - Load in correct order for initialization -->
+    <!-- 1. Supabase library -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- 2. Configuration (must load before Supabase initialization) -->
+    <script src="js/config.js"></script>
+    <!-- 3. Utilities -->
     <script src="js/shared-utils.js"></script>
+    <!-- 4. Supabase client initialization -->
+    <script src="js/shared-supabase.js"></script>
+    <!-- 5. Sync functionality -->
+    <script src="js/shared-sync.js"></script>
+    <!-- 6. Main application script (runs after all dependencies are loaded) -->
     <script>
         // ========================================
         // GLOBAL VARIABLES
@@ -228,30 +253,102 @@
         // ========================================
         document.addEventListener('DOMContentLoaded', initializeApp);
 
+        // Update loading message
+        function updateLoadingMessage(message) {
+            const loadingMsg = document.getElementById('loadingMessage');
+            if (loadingMsg) {
+                loadingMsg.textContent = message;
+            }
+        }
+
+        // Hide loading screen and show main content
+        function showMainApp() {
+            const loadingScreen = document.getElementById('loadingScreen');
+            const mainApp = document.getElementById('mainAppContent');
+            if (loadingScreen) loadingScreen.style.display = 'none';
+            if (mainApp) mainApp.style.display = 'block';
+        }
+
         async function initializeApp() {
             console.log('Initializing SplitEasy...');
+            updateLoadingMessage('Loading application...');
 
             // REQUIRED: Initialize Supabase - app won't work without it
+            // Wait for Supabase library and initialization functions to be available
+            let retries = 0;
+            const maxRetries = 10;
+            
+            while (retries < maxRetries) {
+                if (typeof window.supabase !== 'undefined' && 
+                    typeof window.initializeSupabase === 'function') {
+                    break;
+                }
+                updateLoadingMessage(`Loading Supabase... (${retries + 1}/${maxRetries})`);
+                console.log(`Waiting for Supabase to load... (${retries + 1}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, 200));
+                retries++;
+            }
+
             if (typeof window.initializeSupabase !== 'function') {
-                showNotification('Supabase initialization failed. Please check your configuration.', 'error');
-                document.body.innerHTML = '<div style="padding: 2rem; text-align: center;"><h1>Configuration Error</h1><p>Supabase is required but not configured. Please check js/config.js</p></div>';
+                const errorMsg = 'Supabase initialization failed. Please check your configuration.';
+                console.error(errorMsg);
+                updateLoadingMessage('Configuration error');
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                }
+                document.body.innerHTML = '<div style="padding: 2rem; text-align: center;"><h1>Configuration Error</h1><p>Supabase is required but not configured. Please check js/config.js</p><p style="margin-top: 1rem;"><button onclick="window.location.reload()" style="padding: 0.5rem 1rem; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button></p></div>';
                 return;
             }
 
-            const supabaseInitialized = window.initializeSupabase();
+            // Initialize Supabase with retry logic
+            updateLoadingMessage('Connecting to database...');
+            let supabaseInitialized = false;
+            retries = 0;
+            
+            while (retries < 5 && !supabaseInitialized) {
+                supabaseInitialized = window.initializeSupabase();
+                if (!supabaseInitialized) {
+                    updateLoadingMessage(`Connecting to database... (${retries + 1}/5)`);
+                    console.log(`Supabase initialization attempt ${retries + 1}/5...`);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    retries++;
+                }
+            }
+
             if (!supabaseInitialized) {
-                showNotification('Supabase initialization failed. Please check your connection and configuration.', 'error');
-                document.body.innerHTML = '<div style="padding: 2rem; text-align: center;"><h1>Connection Error</h1><p>Cannot connect to Supabase. Please check your internet connection and js/config.js configuration.</p></div>';
+                const errorMsg = 'Supabase initialization failed. Please check your connection and configuration.';
+                console.error(errorMsg);
+                updateLoadingMessage('Connection failed');
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                }
+                document.body.innerHTML = '<div style="padding: 2rem; text-align: center;"><h1>Connection Error</h1><p>Cannot connect to Supabase. Please check your internet connection and js/config.js configuration.</p><p style="margin-top: 1rem;"><button onclick="window.location.reload()" style="padding: 0.5rem 1rem; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button></p></div>';
                 return;
             }
 
-            // Wait a moment for Supabase to fully initialize
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Wait for Supabase client to be available
+            updateLoadingMessage('Initializing database connection...');
+            retries = 0;
+            while (retries < 10 && !window.supabaseClient) {
+                updateLoadingMessage(`Initializing... (${retries + 1}/10)`);
+                console.log(`Waiting for Supabase client... (${retries + 1}/10)`);
+                await new Promise(resolve => setTimeout(resolve, 300));
+                retries++;
+            }
 
             if (!window.supabaseClient) {
-                showNotification('Supabase client not available. Please refresh the page.', 'error');
+                const errorMsg = 'Supabase client not available. Please refresh the page.';
+                console.error(errorMsg);
+                updateLoadingMessage('Initialization failed');
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                }
+                document.body.innerHTML = '<div style="padding: 2rem; text-align: center;"><h1>Connection Error</h1><p>Supabase client failed to initialize. Please refresh the page.</p><p style="margin-top: 1rem;"><button onclick="window.location.reload()" style="padding: 0.5rem 1rem; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">Refresh Page</button></p></div>';
                 return;
             }
+
+            console.log('✅ Supabase initialized successfully');
+            updateLoadingMessage('Loading your data...');
 
             // Check for return URL (from shared link)
             const urlParams = new URLSearchParams(window.location.search);
@@ -262,6 +359,7 @@
             }
 
             // Check for existing user
+            updateLoadingMessage('Checking user session...');
             const userData = localStorage.getItem('spliteasy_current_user');
             const previousUsers = getPreviousUsers();
 
@@ -270,6 +368,7 @@
                 document.getElementById('currentUserName').textContent = window.currentUser.name;
                 await loadGroups();
                 showMainContent();
+                showMainApp(); // Hide loading screen
                 
                 // If there's a return URL, redirect after a moment
                 if (returnTo) {
@@ -278,8 +377,10 @@
                     }, 1000);
                 }
             } else if (previousUsers.length > 0) {
+                showMainApp(); // Hide loading screen
                 showUserLoginModal(true); // Show with previous users
             } else {
+                showMainApp(); // Hide loading screen
                 showUserLoginModal(false); // Show new user form
             }
         }
@@ -866,8 +967,10 @@
         // MAIN APP FUNCTIONS
         // ========================================
         function showMainContent() {
-            document.getElementById('userLoginModal').style.display = 'none';
-            document.getElementById('mainAppContent').style.display = 'block';
+            const userLoginModal = document.getElementById('userLoginModal');
+            const mainApp = document.getElementById('mainAppContent');
+            if (userLoginModal) userLoginModal.style.display = 'none';
+            if (mainApp) mainApp.style.display = 'block';
         }
 
         async function loadGroups() {
@@ -2048,11 +2151,5 @@ console.log('Use window.forceAppUpdate() to force update');
         // Debug: Log when script is fully loaded
         console.log('Index.html script fully loaded');
     </script>
-
-    <!-- External Scripts -->
-    <!-- Load config.js synchronously before Supabase scripts -->
-    <script src="js/config.js"></script>
-    <script src="js/shared-supabase.js"></script>
-    <script src="js/shared-sync.js"></script>
 </body>
 </html>
