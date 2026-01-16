@@ -1852,31 +1852,45 @@
 
                 showNotification('Deleting group from cloud...', 'info');
                 
+                // Get the correct group ID (could be UUID from Supabase or local ID)
+                const groupToDelete = window.groups.find(g => g.id === editingGroupId || g.supabaseId === editingGroupId);
+                const deleteGroupId = groupToDelete?.supabaseId || groupToDelete?.id || editingGroupId;
+                
+                console.log('Deleting group with ID:', deleteGroupId, 'from group:', groupToDelete);
+                
                 try {
-                    await window.deleteGroupFromDatabase(editingGroupId);
+                    // Force delete immediately when creator deletes (no collaborative deletion needed)
+                    await window.deleteGroupFromDatabase(deleteGroupId, true);
+                    console.log('✅ Group successfully deleted from database');
                 } catch (error) {
+                    console.error('❌ Group deletion error:', error);
                     // If group is already deleted or not found, just remove from local storage
-                    if (error.message?.includes('not found') || error.message?.includes('already deleted')) {
+                    if (error.message?.includes('not found') || error.message?.includes('already deleted') || error.message?.includes('PGRST116')) {
                         console.warn('Group already deleted from database, removing from local storage');
                         showNotification('Group was already deleted', 'info');
                     } else {
+                        // Show the actual error to help debug
+                        console.error('Deletion failed with error:', error.message);
                         throw error; // Re-throw other errors
                     }
                 }
                 
-                // Delete from local array and cache (always do this, even if DB delete failed)
+                // Delete from local array and cache (only if DB delete succeeded)
+                // Check both the original ID and the Supabase ID
+                const deletedGroupId = groupToDelete?.supabaseId || groupToDelete?.id || editingGroupId;
                 window.groups = window.groups.filter(g => {
                     const gId = g.id || g.supabaseId;
                     const gSupabaseId = g.supabaseId || g.id;
-                    return gId !== editingGroupId && gSupabaseId !== editingGroupId;
+                    return gId !== deletedGroupId && gSupabaseId !== deletedGroupId && 
+                           gId !== editingGroupId && gSupabaseId !== editingGroupId;
                 });
                 saveToLocalStorage();
                 displayGroups();
                 closeEditGroupModal();
                 
-                showNotification('Group deleted successfully', 'success');
+                showNotification('Group deleted successfully!', 'success');
                 
-                // Reload groups from Supabase to ensure sync
+                // Reload groups from Supabase to ensure sync and verify deletion
                 await loadGroups();
             } catch (error) {
                 console.error('Failed to delete group:', error);
@@ -1964,29 +1978,43 @@
 
                 showNotification('Deleting group from cloud...', 'info');
                 
+                // Get the correct group ID (could be UUID from Supabase or local ID)
+                const groupToDelete = window.groups.find(g => g.id === groupId || g.supabaseId === groupId);
+                const deleteGroupId = groupToDelete?.supabaseId || groupToDelete?.id || groupId;
+                
+                console.log('Deleting group with ID:', deleteGroupId, 'from group:', groupToDelete);
+                
                 try {
-                    await window.deleteGroupFromDatabase(groupId);
+                    // Force delete immediately when creator deletes (no collaborative deletion needed)
+                    await window.deleteGroupFromDatabase(deleteGroupId, true);
+                    console.log('✅ Group successfully deleted from database');
                 } catch (error) {
+                    console.error('❌ Group deletion error:', error);
                     // If group is already deleted or not found, just remove from local storage
-                    if (error.message?.includes('not found') || error.message?.includes('already deleted')) {
+                    if (error.message?.includes('not found') || error.message?.includes('already deleted') || error.message?.includes('PGRST116')) {
                         console.warn('Group already deleted from database, removing from local storage');
                         showNotification('Group was already deleted', 'info');
                     } else {
+                        // Show the actual error to help debug
+                        console.error('Deletion failed with error:', error.message);
                         throw error; // Re-throw other errors
                     }
                 }
                 
-                // Delete from local array and cache (always do this, even if DB delete failed)
+                // Delete from local array and cache (only if DB delete succeeded)
+                // Check both the original ID and the Supabase ID
+                const deletedGroupId = groupToDelete?.supabaseId || groupToDelete?.id || groupId;
                 window.groups = window.groups.filter(g => {
                     const gId = g.id || g.supabaseId;
                     const gSupabaseId = g.supabaseId || g.id;
-                    return gId !== groupId && gSupabaseId !== groupId;
+                    return gId !== deletedGroupId && gSupabaseId !== deletedGroupId && 
+                           gId !== groupId && gSupabaseId !== groupId;
                 });
                 saveToLocalStorage();
                 displayGroups();
-                showNotification('Group deleted successfully', 'success');
+                showNotification('Group deleted successfully!', 'success');
                 
-                // Reload groups from Supabase to ensure sync
+                // Reload groups from Supabase to ensure sync and verify deletion
                 await loadGroups();
             } catch (error) {
                 console.error('Failed to delete group:', error);
