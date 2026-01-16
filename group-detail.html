@@ -280,6 +280,7 @@
         let currentGroupId = null;
         let editingExpenseId = null;
         let dynamicMemberCounter = 0;
+        let autoRefreshInterval = null; // For automatic polling
 
         // Store group globally so it's accessible everywhere
         window.currentGroup = null;
@@ -560,6 +561,111 @@
             } else {
                 console.log('Real-time sync not initialized - missing user or function');
             }
+
+            // Start automatic polling as fallback (every 5 seconds)
+            startAutoRefresh();
+        });
+
+        // ========================================
+        // AUTOMATIC REFRESH (POLLING) - FALLBACK FOR REAL-TIME SYNC
+        // ========================================
+        
+        // Start automatic refresh polling
+        function startAutoRefresh() {
+            // Stop any existing interval
+            stopAutoRefresh();
+            
+            // Only start if we have a current group
+            if (!currentGroupId && !currentGroup) {
+                console.log('No group loaded, skipping auto-refresh');
+                return;
+            }
+
+            console.log('🔄 Starting automatic refresh (every 5 seconds)');
+            
+            // Poll every 5 seconds
+            autoRefreshInterval = setInterval(async () => {
+                // Skip if page is hidden (user switched tabs/apps)
+                if (document.hidden) {
+                    return;
+                }
+
+                // Skip if we don't have a group ID
+                const groupIdToCheck = currentGroupId || (currentGroup && (currentGroup.id || currentGroup.supabaseId));
+                if (!groupIdToCheck) {
+                    console.log('No group ID for auto-refresh');
+                    return;
+                }
+
+                try {
+                    // Fetch latest group data from database
+                    if (typeof window.fetchGroupFromDatabase === 'function') {
+                        const updatedGroup = await window.fetchGroupFromDatabase(groupIdToCheck);
+                        
+                        if (updatedGroup && currentGroup) {
+                            // Compare expense count and last updated time to detect changes
+                            const currentExpenseCount = currentGroup.expenses?.length || 0;
+                            const updatedExpenseCount = updatedGroup.expenses?.length || 0;
+                            const currentUpdatedAt = currentGroup.updatedAt || currentGroup.updated_at;
+                            const updatedUpdatedAt = updatedGroup.updatedAt || updatedGroup.updated_at;
+                            
+                            // Only update if there are actual changes
+                            if (currentExpenseCount !== updatedExpenseCount || 
+                                currentUpdatedAt !== updatedUpdatedAt ||
+                                JSON.stringify(currentGroup.expenses) !== JSON.stringify(updatedGroup.expenses)) {
+                                
+                                console.log('🔄 Auto-refresh: Group updated, refreshing display');
+                                
+                                // Update current group
+                                currentGroup = updatedGroup;
+                                window.currentGroup = updatedGroup;
+                                
+                                // Update local storage
+                                const localGroups = loadFromLocalStorage();
+                                const groupIndex = localGroups.findIndex(g => 
+                                    g.id === groupIdToCheck || 
+                                    g.supabaseId === groupIdToCheck ||
+                                    (g.id === currentGroup.id) ||
+                                    (g.supabaseId === currentGroup.supabaseId)
+                                );
+                                if (groupIndex !== -1) {
+                                    localGroups[groupIndex] = updatedGroup;
+                                    saveGroupsToLocalStorage(localGroups);
+                                }
+                                
+                                // Update UI
+                                await updateGroupDisplay();
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Auto-refresh error (will retry on next interval):', error);
+                    // Don't show notification for polling errors to avoid spam
+                }
+            }, 5000); // 5 seconds
+
+            // Stop polling when page becomes hidden
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    console.log('Page hidden, pausing auto-refresh');
+                } else {
+                    console.log('Page visible, auto-refresh continues');
+                }
+            });
+        }
+
+        // Stop automatic refresh polling
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                console.log('🛑 Stopped automatic refresh');
+            }
+        }
+
+        // Stop polling when page is unloaded
+        window.addEventListener('beforeunload', () => {
+            stopAutoRefresh();
         });
 
         // ========================================
@@ -853,6 +959,9 @@
                             
                             await updateGroupDisplay();
                             
+                            // Start auto-refresh now that group is loaded
+                            startAutoRefresh();
+                            
                             // Only show notification if user actually joined (was not already a member)
                             if (actuallyJoined) {
                                 showNotification('Joined group successfully!', 'success');
@@ -915,7 +1024,11 @@
                 // Set as current group
                 currentGroup = fetchedGroup;
                 window.currentGroup = fetchedGroup;
+                currentGroupId = groupId; // Ensure currentGroupId is set
                 await updateGroupDisplay();
+
+                // Start auto-refresh now that group is loaded
+                startAutoRefresh();
 
                 showNotification('Group loaded successfully', 'success');
                 return;
