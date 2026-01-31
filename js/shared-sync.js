@@ -94,7 +94,9 @@ async function detectDatabaseSchema() {
 
                 // Test expenses table - only snake_case
                 { table: 'expenses', column: 'group_id', mapping: 'groupId' },
-                { table: 'expenses', column: 'paid_by', mapping: 'paidBy' }
+                { table: 'expenses', column: 'paid_by', mapping: 'paidBy' },
+                { table: 'expenses', column: 'split_type', mapping: 'splitType' },
+                { table: 'expenses', column: 'custom_amounts', mapping: 'customAmounts' }
             ];
 
             // Test all columns in parallel for faster detection (snake_case only - no camelCase to avoid 400 errors)
