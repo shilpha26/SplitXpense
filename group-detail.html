@@ -2028,8 +2028,10 @@
                 return;
             }
             
-            // Validate amount has at most 2 decimal places
-            if (amountValue % 0.01 !== 0 && amountValue % 0.01 > 0.001) {
+            // Validate amount has at most 2 decimal places (using string check to avoid floating-point issues)
+            const amountStr = amount.toString();
+            const decimalIndex = amountStr.indexOf('.');
+            if (decimalIndex !== -1 && amountStr.length - decimalIndex - 1 > 2) {
                 showNotification('Amount can have at most 2 decimal places', 'error');
                 return;
             }
@@ -2395,8 +2397,10 @@
                 return;
             }
             
-            // Validate amount has at most 2 decimal places
-            if (amountValue % 0.01 !== 0 && amountValue % 0.01 > 0.001) {
+            // Validate amount has at most 2 decimal places (using string check to avoid floating-point issues)
+            const amountStr = amount.toString();
+            const decimalIndex = amountStr.indexOf('.');
+            if (decimalIndex !== -1 && amountStr.length - decimalIndex - 1 > 2) {
                 showNotification('Amount can have at most 2 decimal places', 'error');
                 return;
             }
