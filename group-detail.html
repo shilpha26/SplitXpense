@@ -1032,6 +1032,8 @@
                                     splitBetween: exp[expenseSchema.splitBetween] || exp.split_between || [],
                                     date: exp[expenseSchema.createdAt] || exp.created_at || exp.createdat,
                                     perPersonAmount: exp[expenseSchema.perPersonAmount] || exp.per_person_amount || 0,
+                                    splitType: exp[expenseSchema.splitType] || exp.split_type || 'equal',
+                                    customAmounts: exp[expenseSchema.customAmounts] || exp.custom_amounts || null,
                                     supabaseId: exp[expenseSchema.id] || exp.id
                                 })),
                                 totalExpenses: 0,

@@ -1,5 +1,5 @@
 // Force cache update by incrementing version
-const CACHE_VERSION = 'spliteasy-v1738352000000'; // Added custom split schema detection
+const CACHE_VERSION = 'spliteasy-v1738353000000'; // Fixed custom split loading in group-detail
 const CACHE_NAME = CACHE_VERSION;
 
 console.log('🔄 SplitEasy Service Worker Loading with cache:', CACHE_NAME);
