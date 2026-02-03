@@ -1,11 +1,12 @@
 {
   "name": "SplitEasy - Expense Splitter",
   "short_name": "SplitEasy",
+  "description": "A beautiful, intuitive expense splitting app for friends and groups",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f8f9fa",
-  "theme_color": "#28a745",
+  "background_color": "#f8fafc",
+  "theme_color": "#22c55e",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",

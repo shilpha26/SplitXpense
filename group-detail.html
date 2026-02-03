@@ -4,11 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Group Details - SplitEasy</title>
+    <!-- Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#28a745">
+    <meta name="theme-color" content="#22c55e">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="description" content="SplitEasy - View and manage your group expenses">
 </head>
 <body>
     <!-- Header -->
@@ -47,8 +52,8 @@
                 <!-- Expenses will be loaded here -->
             </div>
             <div id="noExpenses" class="empty-state">
-                <p>No Expenses Yet</p>
-                <p>Add your first expense to start tracking group spending!</p>
+                <p>No expenses yet</p>
+                <p>Start tracking your shared expenses by adding the first one. It's quick and easy!</p>
                 <button class="btn-success btn-large" onclick="showAddExpenseModal()">Add First Expense</button>
             </div>
         </section>
@@ -97,8 +102,8 @@
                     <!-- Expenses will be loaded here -->
                 </div>
                 <div id="detailsNoExpenses" class="empty-state">
-                    <p>No Expenses Yet</p>
-                    <p>Add your first expense to start tracking group spending!</p>
+                    <p>No expenses yet</p>
+                    <p>Start tracking your shared expenses by adding the first one. It's quick and easy!</p>
                     <button class="btn-success btn-large" onclick="showAddExpenseModal()">Add First Expense</button>
                 </div>
                 <div class="total-expense-summary">
@@ -339,6 +344,8 @@
             if (mainContent) mainContent.style.display = 'none';
             if (detailsView) {
                 detailsView.style.display = 'block';
+                // Scroll to top of the page
+                window.scrollTo({ top: 0, behavior: 'smooth' });
                 // Switch to balances tab by default
                 switchTab('balances');
                 // Update details view with current data
@@ -1588,23 +1595,15 @@
                     
                     return `
                         <div class="expense-item">
-                            <div class="expense-item-header">
-                                <div class="expense-actions">
-                                    <button class="expense-action-btn edit" onclick="editExpense('${expense.id}')" title="Edit Expense">✎</button>
-                                    <button class="expense-action-btn delete" onclick="deleteExpense('${expense.id}')" title="Delete Expense">×</button>
-                                </div>
-                            </div>
                             <div class="expense-content">
-                                <div class="expense-info">
-                                    <div class="expense-title-row">
-                                    <h4>${expense.name}</h4>
-                                        <div class="expense-amount">${formatCurrency(expense.amount)}</div>
-                                </div>
-                                    <div class="expense-meta-row">
-                                        <span class="expense-meta">Paid by ${paidBy} • ${splitLabel} ${splitBetweenText}</span>
-                                        <span class="expense-date">${formatDate(expense.date)}</span>
-                                    </div>
-                                </div>
+                                <h4>${expense.name}</h4>
+                                <div class="expense-amount">${formatCurrency(expense.amount)}</div>
+                                <div class="expense-meta">Paid by ${paidBy} • ${splitLabel} ${splitBetweenText}</div>
+                                <div class="expense-date">${formatDate(expense.date)}</div>
+                            </div>
+                            <div class="expense-actions">
+                                <button class="expense-action-btn edit" onclick="editExpense('${expense.id}')" title="Edit Expense">✎</button>
+                                <button class="expense-action-btn delete" onclick="deleteExpense('${expense.id}')" title="Delete Expense">×</button>
                             </div>
                         </div>
                     `;
