@@ -353,10 +353,9 @@ header .container {
     cursor: pointer;
 }
 
-/* Change User button - add left arrow */
-.user-info .btn-link[data-action="showChangeUserModal"]::before {
-    content: "← ";
-    font-size: var(--text-sm);
+/* Edit user name button - flip pencil icon to point left */
+.user-info .btn-link[data-action="showEditUserNameModal"] {
+    transform: scaleX(-1);
 }
 
 .user-info .btn-link:hover {
