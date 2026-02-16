@@ -855,7 +855,7 @@ header .container {
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-rows: auto auto;
-    gap: var(--space-2) var(--space-4);
+    gap: var(--space-1) var(--space-4);
     align-items: baseline;
 }
 
@@ -879,6 +879,19 @@ header .container {
     color: var(--primary-600);
     font-feature-settings: 'tnum';
     text-align: right;
+    justify-self: end;
+}
+
+/* Per-person amount - bottom right (replaces date) */
+.per-person-amount {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: var(--text-xs);
+    font-weight: var(--font-medium);
+    color: var(--text-secondary);
+    text-align: right;
+    justify-self: end;
+    font-feature-settings: 'tnum';
 }
 
 /* Meta info - bottom left */
@@ -1003,6 +1016,16 @@ header .container {
         font-weight: 700;
         color: var(--primary-600);
         margin: 0 0 6px 0;
+        grid-column: auto;
+        grid-row: auto;
+    }
+    
+    /* Per-person on mobile */
+    .expense-item .per-person-amount {
+        order: 4;
+        text-align: left;
+        font-size: 0.75rem;
+        color: var(--text-tertiary);
         grid-column: auto;
         grid-row: auto;
     }

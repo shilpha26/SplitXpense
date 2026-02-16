@@ -1580,6 +1580,18 @@
                     const splitBetween = filterToParticipants(expense.splitBetween || []);
                     const isCustomSplit = expense.splitType === 'custom' && expense.customAmounts;
                     
+                    // Calculate per-person amount
+                    let perPersonAmount = 0;
+                    let perPersonHtml = '';
+                    if (isCustomSplit && expense.customAmounts) {
+                        // For custom splits, don't show per-person since it varies
+                        perPersonHtml = '';
+                    } else if (splitBetween.length > 0) {
+                        // For equal splits, calculate per person
+                        perPersonAmount = parseFloat(expense.amount || 0) / splitBetween.length;
+                        perPersonHtml = `<div class="per-person-amount">${formatCurrency(perPersonAmount)} each</div>`;
+                    }
+                    
                     // For custom splits, show each person's amount
                     let splitBetweenText;
                     if (isCustomSplit) {
@@ -1599,7 +1611,7 @@
                                 <h4>${expense.name}</h4>
                                 <div class="expense-amount">${formatCurrency(expense.amount)}</div>
                                 <div class="expense-meta">Paid by ${paidBy} • ${splitLabel} ${splitBetweenText}</div>
-                                <div class="expense-date">${formatDate(expense.date)}</div>
+                                ${perPersonHtml}
                             </div>
                             <div class="expense-actions">
                                 <button class="expense-action-btn edit" onclick="editExpense('${expense.id}')" title="Edit Expense">✎</button>

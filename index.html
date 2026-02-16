@@ -47,7 +47,6 @@
                 <div class="user-info">
                     <span id="currentUserName">Loading...</span>
                     <button class="btn-link" data-action="showEditUserNameModal" title="Edit Name" type="button" aria-label="Edit user name">✎</button>
-                    <button class="btn-link" data-action="showChangeUserModal" type="button" aria-label="Change user">Change User</button>
                 </div>
             </div>
         </header>
@@ -484,17 +483,10 @@
             modal.style.display = 'block';
         }
 
-        // Show change user modal (called from "Change User" button)
-        function showChangeUserModal() {
-            const previousUsers = getPreviousUsers();
-            showUserLoginModal(previousUsers.length > 0);
-        }
-
         // Show edit user name modal
         function showEditUserNameModal() {
             if (!window.currentUser) {
                 showNotification('Please log in first', 'error');
-                showChangeUserModal();
                 return;
             }
 
