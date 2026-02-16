@@ -1493,6 +1493,18 @@ window.startRealtimeSync = function() {
                     await handleExpenseChange(payload);
                 }
             )
+            .on('postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'users',
+                    filter: `id=eq.${window.currentUser.id}`
+                },
+                async (payload) => {
+                    console.log('👤 User data changed:', payload);
+                    await handleUserChange(payload);
+                }
+            )
             .subscribe((status) => {
                 console.log('📡 Real-time subscription status:', status);
                 if (status === 'SUBSCRIBED') {
@@ -1524,6 +1536,49 @@ window.startRealtimeSync = function() {
         console.error('Failed to start real-time sync:', error);
     }
 };
+
+// Handle user changes from real-time sync (for name updates across devices)
+async function handleUserChange(payload) {
+    try {
+        const { new: newData } = payload;
+        
+        if (!newData || !window.currentUser) return;
+        
+        const newName = newData.name;
+        const currentName = window.currentUser.name;
+        
+        // Only update if name actually changed
+        if (newName && newName !== currentName) {
+            console.log(`👤 User name changed: "${currentName}" → "${newName}"`);
+            
+            // Update current user in memory
+            window.currentUser.name = newName;
+            
+            // Update localStorage
+            localStorage.setItem('spliteasy_current_user', JSON.stringify(window.currentUser));
+            
+            // Update UI - try multiple possible elements
+            const nameElements = [
+                document.getElementById('currentUserName'),
+                document.querySelector('.current-user-name'),
+                document.querySelector('[data-user-name]')
+            ];
+            
+            nameElements.forEach(el => {
+                if (el) el.textContent = newName;
+            });
+            
+            // Show notification
+            if (typeof showNotification === 'function') {
+                showNotification(`Your name was updated to "${newName}" from another device`, 'info');
+            }
+            
+            console.log('✅ User name synced from another device');
+        }
+    } catch (error) {
+        console.error('Error handling user change:', error);
+    }
+}
 
 // Handle group changes from real-time sync
 async function handleGroupChange(payload) {
