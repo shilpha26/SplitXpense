@@ -83,35 +83,19 @@
                 <h3>Welcome to SplitEasy</h3>
             </div>
             <div class="modal-body">
-                <!-- Previous Users Section -->
-                <div id="previousUsersSection" class="previous-users-section" style="display: none;">
-                    <div class="section-header">
-                        <h4>Previous Users</h4>
-                        <button type="button" class="btn-link" data-action="showNewUserForm" aria-label="Add new user">Add New User</button>
-                    </div>
-                    <div id="previousUsersList" class="previous-users-list">
-                        <!-- Previous users will be loaded here -->
-                    </div>
-                </div>
-
-                <!-- New User Form -->
+                                <!-- New User Form -->
                 <div id="newUserForm" class="new-user-form">
+                    <div class="form-group">
+                        <label for="userEmail">Email</label>
+                        <input type="email" id="userEmail" placeholder="your@email.com" required>
+                        <div class="form-help-text">Use the same email on all devices to access your groups</div>
+                    </div>
                     <div class="form-group">
                         <label for="userName">Your Name</label>
                         <input type="text" id="userName" placeholder="Enter your name" required>
                     </div>
-                    <div class="form-group">
-                        <label for="userIdInput">User ID</label>
-                        <div class="input-with-status">
-                            <input type="text" id="userIdInput" placeholder="Enter desired User ID" required>
-                            <button type="button" class="btn-check" data-action="checkUserIdAvailability" disabled aria-label="Check user ID availability">Check</button>
-                        </div>
-                        <div class="form-help" id="userIdStatus">Enter a unique User ID</div>
-                        <div class="form-help-text">User ID must be 3-20 characters, letters and numbers only</div>
-                    </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn-link" data-action="handleGenerateUserId" aria-label="Generate user ID">Generate User ID</button>
-                        <button type="button" class="btn-success" data-action="createUser" id="continueBtn" disabled aria-label="Continue to app">Continue</button>
+                        <button type="button" class="btn-success" data-action="signInWithEmail" id="continueBtn" aria-label="Continue to app" style="width: 100%;">Continue</button>
                     </div>
                 </div>
             </div>
@@ -127,6 +111,10 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
+                    <label for="editUserEmail">Email</label>
+                    <input type="email" id="editUserEmail" readonly disabled style="background: #f1f5f9; color: #64748b; cursor: not-allowed;">
+                </div>
+                <div class="form-group">
                     <label for="editUserNameInput">Your Name</label>
                     <input type="text" id="editUserNameInput" placeholder="Enter your name" required>
                 </div>
@@ -134,6 +122,31 @@
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" data-action="closeEditUserNameModal" aria-label="Cancel editing name">Cancel</button>
                 <button type="button" class="btn-success" data-action="saveUserName" aria-label="Save name changes">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Migration Modal (for old users) -->
+    <div id="migrationModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Upgrade Your Account</h3>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">📱💻</div>
+                    <p style="color: #1f2937; font-size: 16px; font-weight: 500; margin-bottom: 8px;">Sync across all your devices!</p>
+                    <p style="color: #64748b; font-size: 14px;">Enter your email to access your groups from any device - mobile, laptop, or tablet.</p>
+                </div>
+                <div class="form-group">
+                    <label for="migrationEmail">Your Email</label>
+                    <input type="email" id="migrationEmail" placeholder="your@email.com" required>
+                    <div class="form-help-text">All your existing groups will be linked to this email</div>
+                </div>
+            </div>
+            <div class="modal-footer" style="flex-direction: column; gap: 10px;">
+                <button type="button" class="btn-success" data-action="migrateToEmail" aria-label="Migrate account" style="width: 100%;">Upgrade Now</button>
+                <button type="button" class="btn-link" data-action="skipMigration" aria-label="Skip migration" style="color: #64748b;">Maybe later</button>
             </div>
         </div>
     </div>
@@ -259,9 +272,6 @@
         let editingGroupId = null;
         let editDynamicMemberCounter = 0;
 
-        // Enhanced User Authentication Variables
-        let userIdCheckTimeout = null;
-        let isUserIdAvailable = false;
 
         // ========================================
         // INITIALIZATION
@@ -445,18 +455,24 @@
                 showMainContent();
                 showMainApp(); // Hide loading screen
                 
+                // Check if old user needs to migrate to email
+                if (checkMigrationNeeded() && !sessionStorage.getItem('migrationSkipped')) {
+                    // Show migration modal after a short delay
+                    setTimeout(() => {
+                        showMigrationModal();
+                    }, 1000);
+                }
+                
                 // If there's a return URL, redirect after a moment
                 if (returnTo) {
                     setTimeout(() => {
                         window.location.href = decodeURIComponent(returnTo);
                     }, 1000);
                 }
-            } else if (previousUsers.length > 0) {
-                showMainApp(); // Hide loading screen
-                showUserLoginModal(true); // Show with previous users
             } else {
+                // No user logged in - show login modal
                 showMainApp(); // Hide loading screen
-                showUserLoginModal(false); // Show new user form
+                showUserLoginModal();
             }
         }
 
@@ -464,23 +480,109 @@
         // USER AUTHENTICATION FUNCTIONS
         // ========================================
 
-        // FIXED: Enhanced User Login Modal - cleaner previous users view
+        // Show login modal with email form
         function showUserLoginModal(hasPreviousUsers = false) {
             const modal = DOMUtils.get('userLoginModal');
-            const previousSection = DOMUtils.get('previousUsersSection');
-            const newUserForm = DOMUtils.get('newUserForm');
-
-            if (hasPreviousUsers) {
-                loadPreviousUsers();
-                previousSection.style.display = 'block';
-                newUserForm.style.display = 'none';
-            } else {
-                previousSection.style.display = 'none';
-                newUserForm.style.display = 'block';
-                setupUserIdInput();
+            if (modal) {
+                modal.style.display = 'block';
+                // Setup email input listener for auto-fetch
+                setupEmailAutoFetch();
+                // Focus on email input
+                setTimeout(() => {
+                    const emailInput = DOMUtils.get('userEmail');
+                    if (emailInput) emailInput.focus();
+                }, 100);
             }
-
-            modal.style.display = 'block';
+        }
+        
+        // Variable to track email fetch timeout
+        let emailFetchTimeout = null;
+        
+        // Setup email input to auto-fetch user name from database
+        function setupEmailAutoFetch() {
+            const emailInput = DOMUtils.get('userEmail');
+            const nameInput = DOMUtils.get('userName');
+            
+            if (!emailInput || !nameInput) return;
+            
+            // Remove previous listener if any
+            emailInput.removeEventListener('input', handleEmailInput);
+            emailInput.addEventListener('input', handleEmailInput);
+        }
+        
+        // Handle email input changes
+        async function handleEmailInput(e) {
+            const email = e.target.value.trim().toLowerCase();
+            const nameInput = DOMUtils.get('userName');
+            const helpText = document.querySelector('#newUserForm .form-help-text');
+            
+            // Clear previous timeout
+            if (emailFetchTimeout) {
+                clearTimeout(emailFetchTimeout);
+            }
+            
+            // Simple email validation
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                // Reset name input state
+                if (nameInput) {
+                    nameInput.readOnly = false;
+                    nameInput.style.backgroundColor = '';
+                }
+                if (helpText) {
+                    helpText.textContent = 'Use the same email on all devices to access your groups';
+                    helpText.style.color = '';
+                }
+                return;
+            }
+            
+            // Debounce - wait 500ms after typing stops
+            emailFetchTimeout = setTimeout(async () => {
+                await fetchAndPopulateName(email);
+            }, 500);
+        }
+        
+        // Fetch user from database and populate name
+        async function fetchAndPopulateName(email) {
+            const nameInput = DOMUtils.get('userName');
+            const helpText = document.querySelector('#newUserForm .form-help-text');
+            
+            if (!nameInput) return;
+            
+            // Check if fetchUserByEmail function exists
+            if (typeof window.fetchUserByEmail !== 'function' || !window.supabaseClient) {
+                return;
+            }
+            
+            try {
+                const existingUser = await window.fetchUserByEmail(email);
+                
+                if (existingUser && existingUser.name) {
+                    // User found - populate name and make it read-only
+                    nameInput.value = existingUser.name;
+                    nameInput.readOnly = true;
+                    nameInput.style.backgroundColor = '#f0f9ff';
+                    
+                    if (helpText) {
+                        helpText.innerHTML = '✓ Welcome back! Your name was loaded from your account.';
+                        helpText.style.color = '#16a34a';
+                    }
+                } else {
+                    // New user - allow name entry
+                    nameInput.readOnly = false;
+                    nameInput.style.backgroundColor = '';
+                    
+                    if (helpText) {
+                        helpText.textContent = 'Use the same email on all devices to access your groups';
+                        helpText.style.color = '';
+                    }
+                }
+            } catch (error) {
+                Logger?.warn('Could not fetch user by email:', error);
+                // Allow manual entry on error
+                nameInput.readOnly = false;
+                nameInput.style.backgroundColor = '';
+            }
         }
 
         // Show edit user name modal
@@ -492,9 +594,14 @@
 
             const modal = DOMUtils.get('editUserNameModal');
             const nameInput = DOMUtils.get('editUserNameInput');
+            const emailInput = DOMUtils.get('editUserEmail');
             
             if (modal && nameInput) {
                 nameInput.value = window.currentUser.name || '';
+                // Show email (read-only)
+                if (emailInput) {
+                    emailInput.value = window.currentUser.email || window.currentUser.id || '';
+                }
                 modal.style.display = 'block';
                 // Focus on input after modal is shown for accessibility
                 setTimeout(() => {
@@ -576,234 +683,205 @@
             }
         }
 
-        // Setup User ID input validation
-        function setupUserIdInput() {
-            const userIdInput = DOMUtils.get('userIdInput');
-            const checkBtn = document.querySelector('.btn-check');
-            const continueBtn = DOMUtils.get('continueBtn');
-            const userNameInput = DOMUtils.get('userName');
-
-            // User ID input validation
-            userIdInput.addEventListener('input', function() {
-                const userId = this.value.trim();
-
-                // Reset status
-                resetUserIdStatus();
-                isUserIdAvailable = false;
-                updateContinueButton();
-
-                if (userId.length >= 3 && isValidUserId(userId)) {
-                    checkBtn.disabled = false;
-
-                    // Clear previous timeout
-                    clearTimeout(userIdCheckTimeout);
-
-                    // Auto-check after 1 second of typing
-                    userIdCheckTimeout = setTimeout(checkUserIdAvailability, 1000);
-                } else {
-                    checkBtn.disabled = true;
-                    if (userId.length > 0) {
-                        setUserIdStatus('Invalid User ID format', 'error');
-                    }
-                }
-            });
-
-            // User name input validation
-            userNameInput.addEventListener('input', function() {
-                updateContinueButton();
-            });
+        // Check if user ID is an email
+        function isEmailUserId(userId) {
+            return userId && userId.includes('@');
         }
 
-        // Update continue button state
-        function updateContinueButton() {
-            const continueBtn = DOMUtils.get('continueBtn');
-            const userNameInput = DOMUtils.get('userName');
-            const userIdInput = DOMUtils.get('userIdInput');
-            const userName = userNameInput?.value.trim() || '';
-            const userId = userIdInput?.value.trim() || '';
+        // Check if old user needs migration
+        function checkMigrationNeeded() {
+            if (!window.currentUser) return false;
+            // If user ID doesn't contain @, they're using old ID format
+            return !isEmailUserId(window.currentUser.id);
+        }
 
-            if (userName && userId && isUserIdAvailable) {
-                continueBtn.disabled = false;
-            } else {
-                continueBtn.disabled = true;
+        // Show migration modal for old users
+        function showMigrationModal() {
+            const modal = DOMUtils.get('migrationModal');
+            if (modal) {
+                modal.style.display = 'block';
+                setTimeout(() => {
+                    const emailInput = DOMUtils.get('migrationEmail');
+                    if (emailInput) emailInput.focus();
+                }, 100);
             }
         }
 
-        // Validate User ID format
-        function isValidUserId(userId) {
-            const regex = /^[a-zA-Z0-9]{3,20}$/;
-            return regex.test(userId);
+        // Skip migration (user can do it later)
+        function skipMigration() {
+            const modal = DOMUtils.get('migrationModal');
+            if (modal) modal.style.display = 'none';
+            // Mark as skipped for this session
+            sessionStorage.setItem('migrationSkipped', 'true');
         }
 
-        // Check User ID availability
-        async function checkUserIdAvailability() {
-            const userIdInput = DOMUtils.get('userIdInput');
-            if (!userIdInput) return;
-            const userId = userIdInput.value.trim();
-            const checkBtn = document.querySelector('.btn-check');
+        // Migrate old user to email-based ID
+        async function migrateToEmail() {
+            const emailInput = DOMUtils.get('migrationEmail');
+            if (!emailInput) return;
 
-            if (!userId || !isValidUserId(userId)) {
-                setUserIdStatus('Invalid User ID format', 'error');
+            const newEmail = emailInput.value.trim().toLowerCase();
+
+            // Validate email
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(newEmail)) {
+                showNotification('Please enter a valid email address', 'error');
                 return;
             }
 
-            // Show checking status
-            setUserIdStatus('Checking availability...', 'checking');
-            checkBtn.disabled = true;
-            checkBtn.textContent = '...';
+            const oldUserId = window.currentUser.id;
+            const userName = window.currentUser.name;
 
             try {
-                // Check against previous local users first
-                const previousUsers = getPreviousUsers();
-                const localExists = previousUsers.some(user => user.id.toLowerCase() === userId.toLowerCase());
+                showNotification('Migrating your account...', 'info');
 
-                if (localExists) {
-                    setUserIdStatus('User ID is unavailable', 'error');
-                    isUserIdAvailable = false;
-                    updateContinueButton();
-                    return;
-                }
+                // Update groups in database - replace old user ID with email
+                if (window.supabaseClient) {
+                    // 1. Update groups where user is the creator
+                    const { data: createdGroups, error: fetchError } = await window.supabaseClient
+                        .from('groups')
+                        .select('id, members')
+                        .eq('created_by', oldUserId);
 
-                // Check against database if available
-                if (typeof window.checkUserIdExists === 'function' && window.supabaseClient) {
-                    const exists = await window.checkUserIdExists(userId);
+                    if (!fetchError && createdGroups) {
+                        for (const group of createdGroups) {
+                            // Update created_by
+                            await window.supabaseClient
+                                .from('groups')
+                                .update({ 
+                                    created_by: newEmail,
+                                    updated_at: new Date().toISOString()
+                                })
+                                .eq('id', group.id);
 
-                    if (exists) {
-                        setUserIdStatus('User ID is unavailable', 'error');
-                        isUserIdAvailable = false;
-                    } else {
-                        setUserIdStatus('User ID is available', 'success');
-                        isUserIdAvailable = true;
+                            // Also update members array if old ID is in it
+                            if (group.members && Array.isArray(group.members)) {
+                                const updatedMembers = group.members.map(m => 
+                                    m === oldUserId ? newEmail : m
+                                );
+                                await window.supabaseClient
+                                    .from('groups')
+                                    .update({ members: updatedMembers })
+                                    .eq('id', group.id);
+                            }
+                        }
                     }
-                } else {
-                    // Offline mode - assume available
-                    setUserIdStatus('User ID is available (offline mode)', 'success');
-                    isUserIdAvailable = true;
+
+                    // 2. Update groups where user is a member (but not creator)
+                    const { data: allGroups, error: allError } = await window.supabaseClient
+                        .from('groups')
+                        .select('id, members')
+                        .contains('members', [oldUserId]);
+
+                    if (!allError && allGroups) {
+                        for (const group of allGroups) {
+                            if (group.members && Array.isArray(group.members)) {
+                                const updatedMembers = group.members.map(m => 
+                                    m === oldUserId ? newEmail : m
+                                );
+                                await window.supabaseClient
+                                    .from('groups')
+                                    .update({ 
+                                        members: updatedMembers,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .eq('id', group.id);
+                            }
+                        }
+                    }
+
+                    // 3. Update expenses created by this user
+                    await window.supabaseClient
+                        .from('expenses')
+                        .update({ created_by: newEmail })
+                        .eq('created_by', oldUserId);
                 }
 
-                updateContinueButton();
+                // Update local user data
+                const newUserData = {
+                    id: newEmail,
+                    email: newEmail,
+                    name: userName,
+                    migratedFrom: oldUserId,
+                    migratedAt: new Date().toISOString()
+                };
+
+                window.currentUser = newUserData;
+                localStorage.setItem('spliteasy_current_user', JSON.stringify(newUserData));
+
+                // Sync to database
+                if (typeof window.syncUserToDatabase === 'function') {
+                    await window.syncUserToDatabase(newUserData);
+                }
+
+                // Close modal and refresh
+                const modal = DOMUtils.get('migrationModal');
+                if (modal) modal.style.display = 'none';
+
+                showNotification('Account upgraded successfully! You can now access your groups from any device.', 'success');
+
+                // Refresh groups
+                await loadGroups();
+                DOMUtils.setText('currentUserName', userName);
 
             } catch (error) {
-                Logger?.error('User ID check failed:', error);
-                setUserIdStatus('Unable to verify availability (offline mode)', 'warning');
-                isUserIdAvailable = true; // Allow in offline mode
-                updateContinueButton();
-            } finally {
-                checkBtn.disabled = false;
-                checkBtn.textContent = 'Check';
+                Logger?.error('Migration failed:', error);
+                showNotification('Migration failed. Please try again.', 'error');
             }
         }
 
-        // Set User ID status
-        function setUserIdStatus(message, type) {
-            const statusEl = DOMUtils.get('userIdStatus');
-            if (statusEl) {
-                statusEl.textContent = message;
-                statusEl.className = `form-help ${type}`;
-                // Add ARIA live region for screen readers
-                statusEl.setAttribute('role', 'status');
-                statusEl.setAttribute('aria-live', 'polite');
-            }
-        }
-
-        // Reset User ID status
-        function resetUserIdStatus() {
-            setUserIdStatus('Enter a unique User ID', '');
-        }
-
-        // Enhanced Generate User ID
-        function handleGenerateUserId() {
+        // Sign in with Email (email as user ID)
+        async function signInWithEmail() {
+            const userEmailInput = DOMUtils.get('userEmail');
             const userNameInput = DOMUtils.get('userName');
-            if (!userNameInput) return;
+            
+            if (!userEmailInput || !userNameInput) return;
+            
+            const userEmail = userEmailInput.value.trim().toLowerCase();
             const userName = userNameInput.value.trim();
-            if (!userName) {
-                showNotification('Please enter your name first', 'error');
+
+            if (!userEmail) {
+                showNotification('Please enter your email', 'error');
                 return;
             }
 
-            let userId = generateUniqueUserId(userName);
-            const userIdInput = DOMUtils.get('userIdInput');
-            if (userIdInput) {
-                userIdInput.value = userId;
+            // Simple email validation
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(userEmail)) {
+                showNotification('Please enter a valid email address', 'error');
+                return;
             }
-
-            // Trigger availability check
-            checkUserIdAvailability();
-        }
-
-        // Generate unique User ID
-        function generateUniqueUserId(name) {
-            const previousUsers = getPreviousUsers();
-            const baseId = generateUserIdFromName(name);
-            let userId = baseId;
-            let counter = 1;
-
-            // Ensure uniqueness against local users
-            while (previousUsers.some(user => user.id.toLowerCase() === userId.toLowerCase())) {
-                userId = `${baseId}${counter}`;
-                counter++;
-            }
-
-            return userId;
-        }
-
-        // Generate User ID from name
-        function generateUserIdFromName(name) {
-            const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
-            const timestamp = Date.now().toString().slice(-4);
-            const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
-            return `${clean}user${timestamp}${random}`;
-        }
-
-        // Enhanced Create User
-        async function createUser() {
-            const userNameInput = DOMUtils.get('userName');
-            const userIdInput = DOMUtils.get('userIdInput');
-            if (!userNameInput || !userIdInput) return;
-            
-            const userName = userNameInput.value.trim();
-            const userId = userIdInput.value.trim();
 
             if (!userName) {
                 showNotification('Please enter your name', 'error');
                 return;
             }
 
-            if (!userId || !isValidUserId(userId)) {
-                showNotification('Please enter a valid User ID', 'error');
-                return;
-            }
-
-            if (!isUserIdAvailable) {
-                showNotification('Please check User ID availability', 'error');
-                return;
-            }
-
-            // Create user data
+            // Use email as user ID
             const userData = {
-                id: userId,
+                id: userEmail,
+                email: userEmail,
                 name: userName,
                 createdAt: new Date().toISOString()
             };
 
-            // Get return URL early (before try block) to avoid scope issues
+            // Get return URL early
             const urlParams = new URLSearchParams(window.location.search);
             const returnTo = sessionStorage.getItem('returnToAfterSignup') || urlParams.get('returnTo');
 
             try {
-                // Try to create user in database if available (optional - app works without users table)
-                if (typeof window.createUserInDatabase === 'function' && window.supabaseClient) {
+                // Check if user exists in database and sync
+                if (typeof window.syncUserToDatabase === 'function' && window.supabaseClient) {
                     try {
-                        await window.createUserInDatabase(userId, userName);
+                        // This will create or update the user
+                        await window.syncUserToDatabase(userData);
                     } catch (dbError) {
-                        // If users table doesn't exist, that's okay - continue with local storage
-                        Logger?.debug('User creation in database skipped (table may not exist)');
+                        Logger?.debug('User sync to database skipped:', dbError);
                     }
                 }
 
-                // Store user data locally (always works)
+                // Store user data locally
                 localStorage.setItem('spliteasy_current_user', JSON.stringify(userData));
-                storePreviousUser(userData);
 
                 window.currentUser = userData;
                 DOMUtils.setText('currentUserName', userName);
@@ -814,12 +892,12 @@
                 if (typeof window.startRealtimeSync === 'function') {
                     setTimeout(() => {
                         window.startRealtimeSync();
-                    }, 1000); // Give time for groups to load
+                    }, 1000);
                 }
 
                 showNotification(`Welcome, ${userName}!`);
                 
-                // Redirect if there's a return URL (from shared link)
+                // Redirect if there's a return URL
                 if (returnTo) {
                     sessionStorage.removeItem('returnToAfterSignup');
                     setTimeout(() => {
@@ -828,18 +906,15 @@
                 }
 
             } catch (error) {
-                Logger?.error('User creation failed:', error);
-                ErrorHandler?.handle(error, 'createUser', false);
-                // Even if database creation fails, continue with local storage
+                Logger?.error('Sign in failed:', error);
+                // Continue with local storage even if database fails
                 localStorage.setItem('spliteasy_current_user', JSON.stringify(userData));
-                storePreviousUser(userData);
                 window.currentUser = userData;
                 DOMUtils.setText('currentUserName', userName);
                 showMainContent();
                 await loadGroups();
-                showNotification(`Welcome, ${userName}! (offline mode)`);
+                showNotification(`Welcome, ${userName}!`);
                 
-                // Also handle return URL in catch block
                 if (returnTo) {
                     sessionStorage.removeItem('returnToAfterSignup');
                     setTimeout(() => {
@@ -850,7 +925,7 @@
         }
 
         // ========================================
-        // PREVIOUS USERS MANAGEMENT
+        // PREVIOUS USERS MANAGEMENT (kept for backward compatibility)
         // ========================================
         function getPreviousUsers() {
             try {
@@ -883,246 +958,6 @@
             } catch (error) {
                 Logger?.error('Error storing previous user:', error);
             }
-        }
-
-        // FIXED: Clean previous users display - no extra buttons shown
-        function loadPreviousUsers() {
-            const previousUsers = getPreviousUsers();
-            const container = DOMUtils.get('previousUsersList');
-            if (!container) return;
-
-            // Clear container
-            container.textContent = '';
-
-            if (previousUsers.length === 0) {
-                const noUsersMsg = DOMUtils.create('p', { className: 'no-users' }, 'No previous users found');
-                container.appendChild(noUsersMsg);
-                return;
-            }
-
-            // Create user items safely
-            previousUsers.forEach(user => {
-                const userItem = DOMUtils.create('div', {
-                    className: 'previous-user-item',
-                    'data-action': 'switchToUser',
-                    'data-user-id': user.id
-                });
-                
-                const userInfo = DOMUtils.create('div', { className: 'user-info' });
-                const userName = DOMUtils.create('div', { className: 'user-name' }, escapeHtml(user.name));
-                const userId = DOMUtils.create('div', { className: 'user-id' }, `ID: ${escapeHtml(user.id)}`);
-                const lastUsed = DOMUtils.create('div', { className: 'last-used' }, `Last used: ${formatRelativeTime(user.lastUsed)}`);
-                
-                userInfo.appendChild(userName);
-                userInfo.appendChild(userId);
-                userInfo.appendChild(lastUsed);
-                
-                const deleteBtn = DOMUtils.create('button', {
-                    className: 'btn-remove',
-                    'data-action': 'handleDeleteAccount',
-                    'data-user-id': user.id,
-                    title: 'Delete Account',
-                    type: 'button',
-                    'aria-label': 'Delete account'
-                }, '×');
-                
-                userItem.appendChild(userInfo);
-                userItem.appendChild(deleteBtn);
-                container.appendChild(userItem);
-            });
-        }
-        
-        // Helper function for switchToUser with event delegation
-        function switchToUser(userId) {
-            const id = userId || (typeof arguments[0] === 'string' ? arguments[0] : null);
-            if (!id) {
-                // Try to get from event target
-                const target = arguments[0]?.currentTarget || arguments[0]?.target;
-                if (target) {
-                    const userItem = target.closest('.previous-user-item');
-                    if (userItem) {
-                        id = userItem.dataset.userId;
-                    }
-                }
-            }
-            if (!id) return;
-            
-            // Call the actual switch function
-            switchToUserActual(id);
-        }
-        
-        // Actual switch function
-        async function switchToUserActual(userId) {
-            const previousUsers = getPreviousUsers();
-            const userData = previousUsers.find(user => user.id === userId);
-
-            if (!userData) {
-                showNotification('User not found', 'error');
-                return;
-            }
-
-            // Create full user data
-            const fullUserData = {
-                id: userData.id,
-                name: userData.name,
-                createdAt: userData.createdAt || new Date().toISOString()
-            };
-
-            // Store as current user
-            localStorage.setItem('spliteasy_current_user', JSON.stringify(fullUserData));
-            storePreviousUser(fullUserData); // Update last used time
-
-            window.currentUser = fullUserData;
-            DOMUtils.setText('currentUserName', userData.name);
-            showMainContent();
-            loadGroups();
-
-            // Initialize real-time sync
-            if (typeof window.startRealtimeSync === 'function') {
-                setTimeout(() => {
-                    window.startRealtimeSync();
-                }, 1000);
-            }
-
-            showNotification(`Switched to ${userData.name}`);
-        }
-        
-        // Helper function for handleDeleteAccount with event delegation
-        function handleDeleteAccount(userId, event) {
-            const id = userId || (event?.target?.dataset?.userId);
-            if (!id) {
-                // Try to get from event target
-                const target = event?.target || event?.currentTarget;
-                if (target) {
-                    const userItem = target.closest('.previous-user-item');
-                    if (userItem) {
-                        id = userItem.dataset.userId;
-                    }
-                }
-            }
-            if (!id) return;
-            
-            // Stop propagation if event provided
-            if (event) {
-                event.stopPropagation();
-            }
-            
-            // Call the actual delete function
-            handleDeleteAccountActual(id);
-        }
-
-
-        // ========================================
-        // DELETE ACCOUNT FUNCTIONALITY (ENHANCED FOR CROSS ICON)
-        // ========================================
-
-        // FIXED: Enhanced delete account function triggered by cross icon
-        async function handleDeleteAccountActual(userId) {
-            // Get user data
-            const previousUsers = getPreviousUsers();
-            const userData = previousUsers.find(user => user.id === userId) || 
-                            (window.currentUser?.id === userId ? window.currentUser : null);
-
-            if (!userData) {
-                showNotification('User not found', 'error');
-                return;
-            }
-
-            const userName = userData.name;
-
-            const confirmation = await ModalUtils.confirm(
-                `WARNING: This will permanently delete the account "${userName}" and ALL associated groups and expenses!\n\n` +
-                `This action cannot be undone. Are you absolutely sure?`,
-                { danger: true, confirmText: 'Yes, Delete', cancelText: 'Cancel' }
-            );
-
-            if (!confirmation) {
-                showNotification('Account deletion cancelled', 'info');
-                return;
-            }
-
-            const finalConfirm = await ModalUtils.confirm(
-                `FINAL CONFIRMATION!\n\n` +
-                `Delete user: ${userName} (ID: ${userId})\n` +
-                `This will delete ALL their data forever.\n\n` +
-                `Click OK to proceed or Cancel to stop.`,
-                { danger: true, confirmText: 'Delete Forever', cancelText: 'Cancel' }
-            );
-
-            if (!finalConfirm) {
-                showNotification('Account deletion cancelled', 'info');
-                return;
-            }
-
-            try {
-                showNotification(`Deleting account "${userName}" and all data...`, 'info');
-
-                // Delete from database (if function exists)
-                if (typeof window.deleteUserFromDatabase === 'function') {
-                    try {
-                        Logger?.info('Attempting database deletion for user:', userId);
-                        Logger?.info('This will delete ALL groups created by this user and ALL expenses in those groups');
-                        await window.deleteUserFromDatabase(userId);
-                        Logger?.info('Database deletion successful - user, groups, and expenses deleted');
-                    } catch (dbError) {
-                        Logger?.warn('Database deletion failed:', dbError);
-                        showNotification(`Cloud deletion failed for "${userName}", but local data will be cleared`, 'warning');
-                    }
-                } else {
-                    Logger?.debug('Database deletion function not available');
-                }
-
-                // Remove from previous users list
-                let updatedPreviousUsers = getPreviousUsers().filter(user => user.id !== userId);
-                localStorage.setItem('spliteasy_previous_users', JSON.stringify(updatedPreviousUsers));
-
-                // If this was the current user, clear ALL their data
-                if (window.currentUser?.id === userId) {
-                    localStorage.removeItem('spliteasy_current_user');
-                    localStorage.removeItem('spliteasy_groups');  // This removes all groups and their expenses
-                    window.currentUser = null;
-                    window.groups = [];
-                    Logger?.info('All user data cleared from localStorage');
-
-                    showNotification(`Account "${userName}" deleted successfully`, 'success');
-
-                    // Show login modal after 2 seconds
-                    setTimeout(() => {
-                        const remainingUsers = getPreviousUsers();
-                        showUserLoginModal(remainingUsers.length > 0);
-                    }, 2000);
-                } else {
-                    // Just remove from list and refresh the display
-                    loadPreviousUsers();
-                    showNotification(`Account "${userName}" deleted successfully`, 'success');
-                }
-
-            } catch (error) {
-                Logger?.error('Failed to delete user:', error);
-                ErrorHandler?.handle(error, 'handleDeleteAccount', true);
-            }
-        }
-
-        // Show new user form
-        function showNewUserForm() {
-            const previousSection = DOMUtils.get('previousUsersSection');
-            const newUserForm = DOMUtils.get('newUserForm');
-            if (previousSection) previousSection.style.display = 'none';
-            if (newUserForm) newUserForm.style.display = 'block';
-
-            // Clear form
-            const userNameInput = DOMUtils.get('userName');
-            const userIdInput = DOMUtils.get('userIdInput');
-            const continueBtn = DOMUtils.get('continueBtn');
-            if (userNameInput) userNameInput.value = '';
-            if (userIdInput) userIdInput.value = '';
-            resetUserIdStatus();
-            if (continueBtn) continueBtn.disabled = true;
-            isUserIdAvailable = false;
-
-            setupUserIdInput();
-            // Focus on name input for accessibility
-            setTimeout(() => DOMUtils.focus('userName'), 100);
         }
 
         // ========================================

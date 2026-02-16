@@ -187,6 +187,36 @@ window.checkUserIdExists = async function(userId) {
     }
 };
 
+// Fetch user by email from database (for auto-populating name)
+window.fetchUserByEmail = async function(email) {
+    if (!window.supabaseClient || isOffline) {
+        console.log('Offline or no client - cannot fetch user');
+        return null;
+    }
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('users')
+            .select('id, name, email')
+            .eq('id', email.toLowerCase())
+            .single();
+
+        if (error) {
+            // User not found or table doesn't exist
+            if (error.code === 'PGRST116' || error.message?.includes('not found') || error.message?.includes('404')) {
+                return null;
+            }
+            console.warn('User fetch error:', error);
+            return null;
+        }
+
+        return data;
+    } catch (error) {
+        console.warn('User fetch failed:', error);
+        return null;
+    }
+};
+
 // Create user in database
 window.createUserInDatabase = async function(userId, userName) {
     if (!window.supabaseClient || isOffline) {
