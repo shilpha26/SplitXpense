@@ -3120,33 +3120,20 @@
                 return null;
             };
             
+            // Show ALL participants in the edit list (don't filter out names that match member IDs,
+            // so e.g. "Ullas" shows in Edit Group even if they're also a registered member)
             const participantNames = participants.map(p => {
-                // First, try to convert IDs to names
                 if (typeof p !== 'string') return null;
-                
-                // Check if this is a registered member ID (in members array)
-                if (memberIds.includes(p)) {
-                    return null; // This is a registered member ID, filter it out
-                }
-                
-                // Check if p looks like an ID (pattern: letters followed by numbers, like "kaladeep0226")
-                if (/^[a-zA-Z]+\d+$/.test(p)) {
-                    const name = getIdToName(p);
-                    if (name) {
-                        // If we found a name, this is actually a registered member ID - filter it out
-                        return null;
-                    }
-                    // If we can't convert it but it looks like an ID, filter it out anyway
+                if (p.includes('user') || p.length > 30 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) {
                     return null;
                 }
-                
-                // Filter out UUIDs and IDs with "user" pattern
-                if (p.includes('user') || p.length > 30 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) {
-                    return null; // This looks like an ID
+                if (/^[a-zA-Z]+\d+$/.test(p)) {
+                    const name = getIdToName(p);
+                    if (name) return null;
+                    return null;
                 }
-                
-                return p; // This looks like a participant name
-            }).filter(p => p !== null); // Remove nulls (filtered out IDs)
+                return p;
+            }).filter(p => p !== null);
             
             if (participantNames.length === 0) {
                 grid.innerHTML = '<p style="color: var(--text-secondary); padding: 1rem;">No participants yet. Add participants below.</p>';
@@ -3183,8 +3170,9 @@
 
             const existingMembers = Array.from(document.querySelectorAll('#editGroupMembersGrid .selectable-box')).map(box => box.dataset.member);
             const dynamicMembers = Array.from(document.querySelectorAll('#editGroupDynamicMembers .dynamic-item-name')).map(el => el.textContent);
+            const existingLower = new Set([...existingMembers, ...dynamicMembers].map(m => (m || '').toLowerCase()));
 
-            if (existingMembers.includes(memberName) || dynamicMembers.includes(memberName)) {
+            if (existingLower.has(memberName.toLowerCase())) {
                 showNotification('Member already exists', 'error');
                 return;
             }
@@ -3227,13 +3215,13 @@
         // FIXED: Save group changes with database synchronization
         async function saveGroupChanges() {
             const groupName = document.getElementById('editGroupName')?.value.trim();
-            // Get ALL members from grid (every name shown is a participant; don't rely on .selected)
-            const allBoxes = document.querySelectorAll('#editGroupMembersGrid .selectable-box');
-            const gridMembers = Array.from(allBoxes).map(box => box.dataset.member).filter(Boolean);
+            // Save only SELECTED members (unselecting removes them from the group)
+            const selectedBoxes = document.querySelectorAll('#editGroupMembersGrid .selectable-box.selected');
+            const selectedMembers = Array.from(selectedBoxes).map(box => box.dataset.member).filter(Boolean);
 
             const dynamicMembers = Array.from(document.querySelectorAll('#editGroupDynamicMembers .dynamic-item-name')).map(el => el.textContent);
 
-            const allPeople = [...gridMembers, ...dynamicMembers];
+            const allPeople = [...selectedMembers, ...dynamicMembers];
 
             if (!groupName || allPeople.length < 2) {
                 showNotification('Please provide group name and at least two members', 'error');
