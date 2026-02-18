@@ -1435,20 +1435,13 @@
             
             // Check if group is pending deletion
             const pendingDeletion = currentGroup.pendingDeletion || currentGroup.pending_deletion;
-            // Count only actual participant names (filter out IDs)
+            // Count all participants (same logic as Edit Group list - don't exclude names that match member IDs)
             const participants = Array.isArray(currentGroup.participants) ? currentGroup.participants : [];
-            const memberIds = Array.isArray(currentGroup.members) ? currentGroup.members : [];
             const participantCount = participants.filter(p => {
                 if (typeof p !== 'string') return false;
-                // Filter out registered member IDs
-                if (memberIds.includes(p)) {
-                    return false; // This is a registered member ID, not a participant
-                }
-                // Filter out UUIDs and IDs with "user" pattern
-                if (p.includes('user') || p.length > 30 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) {
-                    return false; // This looks like an ID
-                }
-                return true; // This looks like a participant name
+                if (p.includes('user') || p.length > 30 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) return false;
+                if (/^[a-zA-Z]+\d+$/.test(p)) return false; // e.g. kaladeep0226
+                return true;
             }).length;
             
             let metaText = `${participantCount} members • ${currentGroup.expenses?.length || 0} expenses • Created by ${creatorName} • ${formatDate(currentGroup.createdAt)}`;

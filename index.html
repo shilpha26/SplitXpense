@@ -1294,15 +1294,12 @@ updateLoadingMessage(`Connecting to Supabase... (${retries + 1}/5)`);
                 
                 const meta = DOMUtils.create('div', { className: 'group-meta' });
                 
-                // Calculate participant count
+                // Count all participants (same logic as Edit Group list - don't exclude names that match member IDs)
                 const participants = Array.isArray(group.participants) ? group.participants : [];
-                const memberIds = Array.isArray(group.members) ? group.members : [];
                 const participantCount = participants.filter(p => {
                     if (typeof p !== 'string') return false;
-                    if (memberIds.includes(p)) return false;
-                    if (p.includes('user') || p.length > 30 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) {
-                        return false;
-                    }
+                    if (p.includes('user') || p.length > 30 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) return false;
+                    if (/^[a-zA-Z]+\d+$/.test(p)) return false; // e.g. kaladeep0226
                     return true;
                 }).length;
                 
