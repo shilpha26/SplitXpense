@@ -63,7 +63,7 @@
     </div>
 
     <!-- Main App Content -->
-    <div id="mainAppContent" style="display: none;">
+    <div id="mainAppContent" class="app-wrapper" style="display: none;">
         <!-- Header -->
         <header>
             <div class="container">
@@ -101,6 +101,8 @@
                 <button class="btn-success" data-action="showCreateGroupModal" type="button" aria-label="Create your first group">Create Your First Group</button>
             </div>
         </main>
+
+        <div data-app-footer></div>
     </div>
 
     <!-- User Login Modal -->
@@ -110,7 +112,6 @@
                 <h3>Welcome to SplitXpense</h3>
             </div>
             <div class="modal-body">
-                                <!-- New User Form -->
                 <div id="newUserForm" class="new-user-form">
                     <div class="form-group">
                         <label for="userEmail">Email</label>
@@ -288,6 +289,7 @@
     <script src="js/shared-supabase.js"></script>
     <!-- 7. Sync functionality -->
     <script src="js/shared-sync.js"></script>
+    <script src="js/footer-component.js"></script>
     <!-- 8. Main application script (runs after all dependencies are loaded) -->
     <script>
         // ========================================
@@ -315,7 +317,8 @@
             const loadingScreen = DOMUtils.get('loadingScreen');
             const mainApp = DOMUtils.get('mainAppContent');
             if (loadingScreen) loadingScreen.style.display = 'none';
-            if (mainApp) mainApp.style.display = 'block';
+            if (mainApp) mainApp.style.display = 'flex';
+            window.scrollTo(0, 0);
         }
 
         async function initializeApp() {
@@ -480,25 +483,15 @@ updateLoadingMessage(`Connecting to Supabase... (${retries + 1}/5)`);
                 DOMUtils.setText('currentUserName', window.currentUser.name);
                 await loadGroups();
                 showMainContent();
-                showMainApp(); // Hide loading screen
-                
-                // Check if old user needs to migrate to email
+                showMainApp();
                 if (checkMigrationNeeded() && !sessionStorage.getItem('migrationSkipped')) {
-                    // Show migration modal after a short delay
-                    setTimeout(() => {
-                        showMigrationModal();
-                    }, 1000);
+                    setTimeout(() => showMigrationModal(), 1000);
                 }
-                
-                // If there's a return URL, redirect after a moment
                 if (returnTo) {
-                    setTimeout(() => {
-                        window.location.href = decodeURIComponent(returnTo);
-                    }, 1000);
+                    setTimeout(() => { window.location.href = decodeURIComponent(returnTo); }, 1000);
                 }
             } else {
-                // No user logged in - show login modal
-                showMainApp(); // Hide loading screen
+                showMainApp();
                 showUserLoginModal();
             }
         }
@@ -512,9 +505,7 @@ updateLoadingMessage(`Connecting to Supabase... (${retries + 1}/5)`);
             const modal = DOMUtils.get('userLoginModal');
             if (modal) {
                 modal.style.display = 'block';
-                // Setup email input listener for auto-fetch
                 setupEmailAutoFetch();
-                // Focus on email input
                 setTimeout(() => {
                     const emailInput = DOMUtils.get('userEmail');
                     if (emailInput) emailInput.focus();
@@ -872,93 +863,36 @@ updateLoadingMessage(`Connecting to Supabase... (${retries + 1}/5)`);
         async function signInWithEmail() {
             const userEmailInput = DOMUtils.get('userEmail');
             const userNameInput = DOMUtils.get('userName');
-            
             if (!userEmailInput || !userNameInput) return;
-            
             const userEmail = userEmailInput.value.trim().toLowerCase();
             const userName = userNameInput.value.trim();
-
-            if (!userEmail) {
-                showNotification('Please enter your email', 'error');
-                return;
-            }
-
-            // Simple email validation
+            if (!userEmail) { showNotification('Please enter your email', 'error'); return; }
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(userEmail)) {
-                showNotification('Please enter a valid email address', 'error');
-                return;
-            }
-
-            if (!userName) {
-                showNotification('Please enter your name', 'error');
-                return;
-            }
-
-            // Use email as user ID
-            const userData = {
-                id: userEmail,
-                email: userEmail,
-                name: userName,
-                createdAt: new Date().toISOString()
-            };
-
-            // Get return URL early
-            const urlParams = new URLSearchParams(window.location.search);
-            const returnTo = sessionStorage.getItem('returnToAfterSignup') || urlParams.get('returnTo');
-
+            if (!emailRegex.test(userEmail)) { showNotification('Please enter a valid email address', 'error'); return; }
+            if (!userName) { showNotification('Please enter your name', 'error'); return; }
+            const userData = { id: userEmail, email: userEmail, name: userName, createdAt: new Date().toISOString() };
+            const returnTo = sessionStorage.getItem('returnToAfterSignup') || new URLSearchParams(window.location.search).get('returnTo');
             try {
-                // Check if user exists in database and sync
                 if (typeof window.syncUserToDatabase === 'function' && window.supabaseClient) {
-                    try {
-                        // This will create or update the user
-                        await window.syncUserToDatabase(userData);
-                    } catch (dbError) {
-                        Logger?.debug('User sync to database skipped:', dbError);
-                    }
+                    try { await window.syncUserToDatabase(userData); } catch (dbError) { Logger?.debug('User sync to database skipped:', dbError); }
                 }
-
-                // Store user data locally
                 localStorage.setItem('spliteasy_current_user', JSON.stringify(userData));
-
                 window.currentUser = userData;
                 DOMUtils.setText('currentUserName', userName);
                 showMainContent();
                 await loadGroups();
-
-                // Initialize real-time sync
-                if (typeof window.startRealtimeSync === 'function') {
-                    setTimeout(() => {
-                        window.startRealtimeSync();
-                    }, 1000);
-                }
-
+                if (typeof window.startRealtimeSync === 'function') setTimeout(() => window.startRealtimeSync(), 1000);
                 showNotification(`Welcome, ${userName}!`);
-                
-                // Redirect if there's a return URL
-                if (returnTo) {
-                    sessionStorage.removeItem('returnToAfterSignup');
-                    setTimeout(() => {
-                        window.location.href = decodeURIComponent(returnTo);
-                    }, 1500);
-                }
-
+                if (returnTo) { sessionStorage.removeItem('returnToAfterSignup'); setTimeout(() => window.location.href = decodeURIComponent(returnTo), 1500); }
             } catch (error) {
                 Logger?.error('Sign in failed:', error);
-                // Continue with local storage even if database fails
                 localStorage.setItem('spliteasy_current_user', JSON.stringify(userData));
                 window.currentUser = userData;
                 DOMUtils.setText('currentUserName', userName);
                 showMainContent();
                 await loadGroups();
                 showNotification(`Welcome, ${userName}!`);
-                
-                if (returnTo) {
-                    sessionStorage.removeItem('returnToAfterSignup');
-                    setTimeout(() => {
-                        window.location.href = decodeURIComponent(returnTo);
-                    }, 1500);
-                }
+                if (returnTo) { sessionStorage.removeItem('returnToAfterSignup'); setTimeout(() => window.location.href = decodeURIComponent(returnTo), 1500); }
             }
         }
 
@@ -1007,6 +941,7 @@ updateLoadingMessage(`Connecting to Supabase... (${retries + 1}/5)`);
             if (userLoginModal) userLoginModal.style.display = 'none';
             if (mainApp) {
                 mainApp.style.display = 'block';
+                window.scrollTo(0, 0);
                 // Set focus to main content for screen readers (but blur immediately to avoid visual outline)
                 mainApp.setAttribute('tabindex', '-1');
                 mainApp.focus();

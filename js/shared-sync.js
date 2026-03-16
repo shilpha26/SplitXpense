@@ -149,18 +149,20 @@ async function syncUserToDatabase(userData) {
         console.log('Syncing user to database:', userData.name);
 
         const userSchema = SCHEMA_MAPPING.users;
+        const now = new Date().toISOString();
+        // Only send id, name, updated_at. Never send created_at so we don't overwrite
+        // the original join date when someone signs in again (Joined must stay correct).
         const userRecord = {
             [userSchema.id]: userData.id,
             [userSchema.name]: userData.name,
-            [userSchema.createdAt]: userData.createdAt || new Date().toISOString(),
-            [userSchema.updatedAt]: new Date().toISOString()
+            [userSchema.updatedAt]: now
         };
 
         console.log('User record structure:', userRecord);
 
         const { data, error } = await window.supabaseClient
             .from('users')
-            .upsert(userRecord)
+            .upsert(userRecord, { onConflict: 'id' })
             .select()
             .single();
 
@@ -1850,6 +1852,176 @@ window.stopRealtimeSync = function() {
         }
     }
 };
+
+// ========================================
+// ADMIN STATS (for admin panel - requires RLS to allow admin read on users/groups/expenses)
+// ========================================
+async function fetchAllUsersForAdmin() {
+    if (!window.supabaseClient) return [];
+    await detectDatabaseSchema();
+    const userSchema = SCHEMA_MAPPING.users;
+    const createdCol = userSchema.createdAt || 'created_at';
+    const { data, error } = await window.supabaseClient
+        .from('users')
+        .select('id, name, ' + createdCol)
+        .order(createdCol, { ascending: false });
+    if (error) {
+        console.warn('Admin: fetch users failed (RLS may block)', error);
+        return [];
+    }
+    return data || [];
+}
+
+async function fetchAdminStats() {
+    if (!window.supabaseClient) {
+        return { users: [], totalGroups: 0, totalExpenses: 0, groupsList: [], error: 'No Supabase client' };
+    }
+    await detectDatabaseSchema();
+    const groupSchema = SCHEMA_MAPPING.groups;
+    const createdByCol = groupSchema.createdBy || 'created_by';
+    const membersCol = groupSchema.members || 'members';
+    const users = await fetchAllUsersForAdmin();
+    const { data: groupsList, error: groupsError } = await window.supabaseClient
+        .from('groups')
+        .select('id, name, ' + createdByCol + ', ' + membersCol);
+    if (groupsError) console.warn('Admin: groups fetch failed', groupsError);
+    const totalGroups = groupsList ? groupsList.length : 0;
+    const { count: expensesCount, error: expensesError } = await window.supabaseClient
+        .from('expenses')
+        .select('*', { count: 'exact', head: true });
+    if (expensesError) console.warn('Admin: expenses count failed', expensesError);
+    function toEmail(val) {
+        if (val == null) return '';
+        if (typeof val === 'object' && val.id != null) return String(val.id).toLowerCase();
+        return String(val).toLowerCase();
+    }
+    var usersWithCounts = users.map(function(u) {
+        var uid = (u.id && String(u.id).toLowerCase()) || '';
+        var count = 0;
+        var groupNames = [];
+        if (groupsList) {
+            groupsList.forEach(function(g) {
+                var creator = g[createdByCol] != null ? g[createdByCol] : g.created_by;
+                var creatorE = toEmail(creator);
+                var isIn = creatorE && creatorE === uid;
+                if (!isIn && g[membersCol]) {
+                    var arr = typeof g[membersCol] === 'string' ? (function() { try { return JSON.parse(g[membersCol]); } catch (e) { return []; } })() : g[membersCol];
+                    if (Array.isArray(arr)) isIn = arr.some(function(m) { return toEmail(m) === uid; });
+                }
+                if (isIn) {
+                    count++;
+                    groupNames.push(g.name || g.id || '—');
+                }
+            });
+        }
+        return Object.assign({}, u, { groupCount: count, groupNames: groupNames });
+    });
+    return {
+        users: usersWithCounts,
+        totalGroups: totalGroups,
+        totalExpenses: expensesCount != null ? expensesCount : 0,
+        groupsList: groupsList || []
+    };
+}
+
+/**
+ * Admin: delete a user from app data (public.users, their groups, expenses, memberships).
+ * Uses client + RLS only (no Edge Function). Auth user is NOT deleted—remove them in
+ * Supabase Dashboard → Authentication → Users if needed.
+ * Requires RLS policy allowing admin email to DELETE/UPDATE (see admin-rls.sql).
+ * @param {string} userId - User id (same as public.users.id)
+ * @returns {Promise<{ ok: boolean, error?: string }>}
+ */
+async function deleteUserInSupabase(userId) {
+    console.log('[Admin delete] Starting delete for userId:', userId);
+    if (!window.supabaseClient) {
+        console.warn('[Admin delete] No Supabase client');
+        return { ok: false, error: 'Supabase not connected' };
+    }
+    if (!userId || typeof userId !== 'string') {
+        console.warn('[Admin delete] Invalid userId');
+        return { ok: false, error: 'Invalid user id' };
+    }
+    await detectDatabaseSchema();
+    const groupSchema = SCHEMA_MAPPING.groups;
+    const expenseSchema = SCHEMA_MAPPING.expenses;
+    const createdByCol = groupSchema.createdBy || 'created_by';
+    const membersCol = groupSchema.members || 'members';
+    const uid = userId.trim();
+    try {
+        // 1) Groups owned by this user
+        const { data: ownedGroups, error: eg } = await window.supabaseClient
+            .from('groups')
+            .select('id')
+            .eq(createdByCol, uid);
+        if (eg) {
+            console.error('[Admin delete] Failed to fetch groups:', eg);
+            return { ok: false, error: eg.message || 'Failed to fetch groups' };
+        }
+        const groupIds = (ownedGroups || []).map(function(g) { return g.id; });
+        console.log('[Admin delete] Owned groups to delete:', groupIds.length, groupIds);
+        // 2) Delete expenses in those groups, then the groups
+        for (var g = 0; g < groupIds.length; g++) {
+            var exErr = (await window.supabaseClient.from('expenses').delete().eq(expenseSchema.groupId, groupIds[g])).error;
+            if (exErr) {
+                console.error('[Admin delete] Failed to delete expenses for group', groupIds[g], exErr);
+                return { ok: false, error: 'Expenses: ' + (exErr.message || exErr.code) };
+            }
+            var grErr = (await window.supabaseClient.from('groups').delete().eq('id', groupIds[g])).error;
+            if (grErr) {
+                console.error('[Admin delete] Failed to delete group', groupIds[g], grErr);
+                return { ok: false, error: 'Group: ' + (grErr.message || grErr.code) };
+            }
+        }
+        // 3) Expenses where they paid (in other people's groups)
+        var paidErr = (await window.supabaseClient.from('expenses').delete().eq(expenseSchema.paidBy, uid)).error;
+        if (paidErr) {
+            console.error('[Admin delete] Failed to delete expenses by paid_by', paidErr);
+            return { ok: false, error: 'Expenses (paid_by): ' + (paidErr.message || paidErr.code) };
+        }
+        // 4) Remove user from other groups' members
+        var { data: groupsWithMember, error: gwErr } = await window.supabaseClient.from('groups').select('id, ' + membersCol);
+        if (gwErr) console.warn('[Admin delete] Fetch groups for members update:', gwErr);
+        if (groupsWithMember) {
+            for (var i = 0; i < groupsWithMember.length; i++) {
+                var gr = groupsWithMember[i];
+                var members = gr[membersCol];
+                if (!Array.isArray(members)) continue;
+                var next = members.filter(function(m) { return String(m).toLowerCase() !== uid.toLowerCase(); });
+                if (next.length !== members.length) {
+                    var upErr = (await window.supabaseClient.from('groups').update({ [membersCol]: next }).eq('id', gr.id)).error;
+                    if (upErr) {
+                        console.error('[Admin delete] Failed to update group members', gr.id, upErr);
+                        return { ok: false, error: 'Update members: ' + (upErr.message || upErr.code) };
+                    }
+                }
+            }
+        }
+        // 5) Delete from users (use .select() to get deleted rows - if 0, RLS may have blocked)
+        var { data: deletedRows, error: uErr } = await window.supabaseClient
+            .from('users')
+            .delete()
+            .eq('id', uid)
+            .select('id');
+        if (uErr) {
+            console.error('[Admin delete] Failed to delete user row:', uErr);
+            return { ok: false, error: uErr.message || 'Failed to delete user row' };
+        }
+        if (!deletedRows || deletedRows.length === 0) {
+            console.warn('[Admin delete] No user row was deleted (0 rows). Check RLS or user id.');
+            return { ok: false, error: 'User could not be deleted. On the Admin page, sign in with Supabase using the yellow banner (enter your password). If you have no password, add yourself in Supabase Dashboard → Authentication → Users and set one.' };
+        }
+        console.log('[Admin delete] User deleted successfully, rows removed:', deletedRows.length);
+        return { ok: true };
+    } catch (e) {
+        console.error('[Admin delete] Exception:', e);
+        return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+}
+
+window.fetchAllUsersForAdmin = fetchAllUsersForAdmin;
+window.fetchAdminStats = fetchAdminStats;
+window.deleteUserInSupabase = deleteUserInSupabase;
 
 // Make all functions globally available
 window.fetchAllGroupsFromDatabase = fetchAllGroupsFromDatabase;

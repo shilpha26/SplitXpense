@@ -129,6 +129,7 @@
     --space-12: 3rem;    /* 48px */
     --space-16: 4rem;    /* 64px */
     --space-20: 5rem;    /* 80px */
+    --header-height: 4rem; /* fixed header height for top padding (ensure content clears header) */
     
     /* === TYPOGRAPHY === */
     --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -199,6 +200,10 @@ html {
     -webkit-tap-highlight-color: transparent;
 }
 
+html {
+    width: 100%;
+    overflow-x: hidden;
+}
 body {
     font-family: var(--font-family);
     background-color: var(--background);
@@ -209,6 +214,10 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
+    width: 100%;
+    max-width: 100vw;
+    margin: 0;
+    overflow-x: hidden;
 }
 
 /* Selection styling */
@@ -284,15 +293,16 @@ a:hover {
    ============================================ */
 
 header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: var(--z-sticky);
     background: var(--surface);
     padding: var(--space-4) 0;
-    position: sticky;
-    top: 0;
-    z-index: var(--z-sticky);
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     border-bottom: 1px solid var(--border-subtle);
-    backdrop-filter: blur(8px);
-    background: rgba(255, 255, 255, 0.95);
 }
 
 header .container {
@@ -324,6 +334,93 @@ header .container {
     margin: var(--space-1) 0 0 0;
     font-weight: var(--font-medium);
     letter-spacing: var(--tracking-wide);
+}
+
+/* App wrapper: full width on all screens, flex only for footer placement */
+.app-wrapper {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    width: 100%;
+    max-width: 100%;
+}
+.app-wrapper > main {
+    flex: 1 1 auto;
+    width: 100%;
+    padding-top: var(--header-height);
+}
+
+/* App footer – minimal, on-brand, blends with page */
+.app-footer {
+    flex-shrink: 0;
+    margin-top: auto;
+    padding: var(--space-1) var(--space-1) var(--space-5);
+    background: transparent;
+    width: 100%;
+}
+.app-footer-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    text-align: center;
+    max-width: 480px;
+    margin: 0 auto;
+}
+.app-footer-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: opacity var(--transition-fast);
+}
+.app-footer-brand:hover {
+    opacity: 0.85;
+}
+.app-footer-brand img {
+    height: 28px;
+    width: auto;
+    display: block;
+}
+.app-footer-name {
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    letter-spacing: -0.02em;
+}
+.app-footer-tagline {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    font-weight: var(--font-medium);
+    letter-spacing: 0.02em;
+}
+.app-footer-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+}
+.app-footer-link {
+    color: var(--primary-600);
+    text-decoration: none;
+    font-weight: var(--font-medium);
+}
+.app-footer-link:hover {
+    color: var(--primary-700);
+    text-decoration: underline;
+}
+.app-footer-dot {
+    color: var(--text-tertiary);
+    opacity: 0.6;
+    user-select: none;
+}
+.app-footer-copy {
+    color: var(--text-tertiary);
 }
 
 .user-info {
@@ -364,14 +461,25 @@ header .container {
 
 /* Group Detail Header */
 .group-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: var(--z-sticky);
     background: var(--surface);
     border-bottom: 1px solid var(--border-subtle);
     padding: var(--space-4) 0;
-    position: sticky;
-    top: 0;
-    z-index: var(--z-sticky);
-    backdrop-filter: blur(8px);
-    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.group-header + main {
+    padding-top: var(--header-height);
+}
+
+/* First block in group detail (Total Expenses) stays visible below fixed header */
+.group-header + main .total-expenses {
+    scroll-margin-top: var(--header-height);
 }
 
 .group-header .container {
@@ -2543,6 +2651,18 @@ a:focus-visible {
    24. MOBILE RESPONSIVE
    ============================================ */
 
+/* Desktop: ensure app uses full width and doesn't get mobile layout */
+@media (min-width: 769px) {
+    .app-wrapper,
+    #mainAppContent {
+        width: 100%;
+        max-width: 100%;
+    }
+    .app-wrapper > main.container {
+        max-width: 1200px;
+    }
+}
+
 @media (max-width: 768px) {
     /* Typography */
     h1 { font-size: var(--text-2xl); }
@@ -2579,7 +2699,11 @@ a:focus-visible {
         font-size: var(--text-sm);
     }
     
-    /* Group Header */
+    /* Group Header - stacked on mobile; main content needs extra top padding */
+    .group-header + main {
+        padding-top: 10rem;
+    }
+    
     .group-header .container {
         flex-direction: column;
         align-items: stretch;
@@ -2633,7 +2757,11 @@ a:focus-visible {
         transform: translateX(0);
     }
     
-    /* Total Expenses */
+    /* Total Expenses - clear of fixed header on mobile */
+    .group-header + main .total-expenses {
+        scroll-margin-top: 8.5rem;
+    }
+    
     .total-expenses {
         padding: var(--space-5);
         margin: var(--space-4) 0;

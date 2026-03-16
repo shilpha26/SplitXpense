@@ -88,8 +88,9 @@ window.initializeSupabase = function() {
             currentConfig.anonKey,
             {
                 auth: {
-                    persistSession: false, // We handle our own user management
-                    autoRefreshToken: false
+                    persistSession: true,  // Used for admin page login
+                    autoRefreshToken: true,
+                    detectSessionInUrl: true
                 },
                 realtime: {
                     params: {
@@ -144,6 +145,62 @@ async function testSupabaseConnection() {
         return false;
     }
 }
+
+// ========================================
+// AUTH (email + password)
+// ========================================
+
+/** Get current session; returns { data: { session }, error } */
+window.getAuthSession = async function() {
+    if (!window.supabaseClient) return { data: { session: null }, error: new Error('No Supabase client') };
+    return await window.supabaseClient.auth.getSession();
+};
+
+/** Build currentUser from auth user. Use email as id for compatibility with groups/expenses. */
+window.getCurrentUserFromAuth = function(authUser) {
+    if (!authUser || !authUser.email) return null;
+    var email = (authUser.email || '').toLowerCase();
+    var name = (authUser.user_metadata && authUser.user_metadata.name) || authUser.email || email;
+    return {
+        id: email,
+        email: email,
+        name: name,
+        createdAt: authUser.created_at ? new Date(authUser.created_at).toISOString() : new Date().toISOString()
+    };
+};
+
+/** Sign up with email and password. Optional name in options.data.name. */
+window.authSignUp = async function(email, password, options) {
+    if (!window.supabaseClient) return { data: null, error: new Error('No Supabase client') };
+    return await window.supabaseClient.auth.signUp({
+        email: (email || '').toLowerCase().trim(),
+        password: password || '',
+        options: options || {}
+    });
+};
+
+/** Sign in with email and password. */
+window.authSignIn = async function(email, password) {
+    if (!window.supabaseClient) return { data: null, error: new Error('No Supabase client') };
+    return await window.supabaseClient.auth.signInWithPassword({
+        email: (email || '').toLowerCase().trim(),
+        password: password || ''
+    });
+};
+
+/** Sign out. */
+window.authSignOut = async function() {
+    if (!window.supabaseClient) return;
+    await window.supabaseClient.auth.signOut();
+};
+
+/** Check if email is in Supabase admins table (admin list stored in DB). */
+window.checkIsAdminEmail = async function(email) {
+    if (!window.supabaseClient || !email) return false;
+    var e = String(email).toLowerCase().trim();
+    var res = await window.supabaseClient.from('admins').select('email').eq('email', e).maybeSingle();
+    return !!(res.data && res.data.email);
+};
 
 // ========================================
 // USER MANAGEMENT FUNCTIONS

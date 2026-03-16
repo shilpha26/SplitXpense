@@ -2,7 +2,8 @@
   "trailingSlash": false,
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
-    { "source": "/group-detail", "destination": "/group-detail.html" }
+    { "source": "/group-detail", "destination": "/group-detail.html" },
+    { "source": "/admin", "destination": "/admin.html" }
   ],
   "headers": [
     {

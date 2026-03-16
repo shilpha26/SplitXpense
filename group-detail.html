@@ -95,6 +95,8 @@
 
     </main>
 
+    <div data-app-footer></div>
+
     <!-- Details View (Tabbed Interface) -->
     <div id="detailsView" class="details-view" style="display: none;">
         <div class="container">
@@ -607,7 +609,6 @@
                     console.log('User session restored for group detail:', window.currentUser.name);
                 } catch (error) {
                     console.error('Failed to parse user data:', error);
-                    // Don't redirect immediately - might be a shared link
                 }
             } else {
                 console.warn('No user session found - will redirect to signup if accessing shared link');
@@ -3566,5 +3567,16 @@ window.forceAppUpdate = function() {
     <script src="js/config.js"></script>
     <script src="js/shared-supabase.js"></script>
     <script src="js/shared-sync.js"></script>
+    <script src="js/footer-component.js"></script>
+    <script>
+        (function() {
+            function scrollToTop() { window.scrollTo(0, 0); }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', scrollToTop);
+            } else {
+                scrollToTop();
+            }
+        })();
+    </script>
 </body>
 </html>

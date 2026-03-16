@@ -53,6 +53,7 @@ SplitXpense uses two main services:
 SplitXpense/
 ├── index.html           # Home: list of groups, create group, sign in
 ├── group-detail.html    # Single group: expenses, balances, share
+├── admin.html           # Admin panel: who joined, total groups/expenses (optional)
 ├── 404.html             # Redirect to Vercel (for GitHub Pages)
 ├── vercel.json          # Vercel: rewrites (/ → index.html, /group-detail → group-detail.html)
 ├── manifest.json        # PWA name, icons
@@ -116,6 +117,22 @@ In Supabase **SQL Editor**, run the SQL from `supabase-migration.sql` (or your s
 - **Domains**: In Vercel you can add your custom domain and redirects (e.g. old domain → new one).
 
 No separate “backend” deploy: the backend is Supabase; the front end is static files on Vercel.
+
+---
+
+## Admin panel
+
+Open `/admin` (or `admin.html`) to see **who joined**, **total groups**, **total expenses**, **new users/expenses this week**, and a table of users with expandable rows (groups list and Delete).Sign in on the admin page with the email; anyone else “Access denied”.
+
+If RLS blocks reads on `users`/`groups`/`expenses`, add policies that allow the anon (or authenticated) role to select.
+
+### Delete user (simple, no backend)
+
+Clicking **Delete** in the admin panel removes the user from **app data** (public `users`, their groups, expenses, and membership in other groups). This uses only the browser and Supabase RLS—no Edge Function or CLI.
+
+1. **One-time setup**: In Supabase **SQL Editor**, run the statements in `supabase-admin-rls.sql`.  This lets the admin account delete/update rows when signed in.
+2. **Admin must be signed in** with that email in the app so Supabase sends their JWT; then Delete works from the admin page.
+3. **Auth**: The user is removed from app data but **not** from Supabase Authentication. To stop them logging in, delete them in **Supabase Dashboard → Authentication → Users** (manual step).
 
 ---
 
