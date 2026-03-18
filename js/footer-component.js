@@ -10,7 +10,7 @@
         '<span class="app-footer-name">SplitXpense</span>' +
         '</a>' +
         '<div class="app-footer-meta">' +
-        '<span class="app-footer-copy">© 2026 All rights reserved</span>' +
+        '<span class="app-footer-copy">© 2025 · Built with ❤️ by Shilpha</span>' +
         '</div>' +
         '</div>' +
         '</footer>';

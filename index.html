@@ -25,14 +25,50 @@
             Promise.all([unregister, clearCaches]).then(function() { window.location.reload(true); }).catch(function() { window.location.reload(true); });
         })();
     </script>
-    <title>SplitXpense - Share expenses, split the cost</title>
+    <title>SplitXpense - Free Bill Splitting App | Split Expenses with Friends & Groups</title>
     <meta name="google-site-verification" content="XeTZ3glRwyC_CHwEdgwa_uc3xJ0wQ8TWbfB-gW1SX7U">
-    <meta name="description" content="SplitXpense — easily split expenses with friends, roommates, and travel groups. Track who owes what and settle up fast.">
-    <meta property="og:title" content="SplitXpense - Share expenses, split the cost">
-    <meta property="og:description" content="Easily split expenses with friends, roommates, and travel groups.">
+    <meta name="description" content="SplitXpense is a free bill splitting app to share expenses with friends, roommates, and travel groups. Easily track who owes what, split costs fairly, and settle up instantly. The best free Splitwise alternative — no account needed for basic use.">
+    <meta name="keywords" content="split expenses app, free bill splitter, expense sharing app, splitwise alternative, split bills with friends, group expense tracker, roommate expense splitter, travel expense splitter, who owes me app, settle up app, shared cost tracker, split cost app, money tracker friends, trip expense app, divide bills equally">
+    <!-- Open Graph -->
+    <meta property="og:title" content="SplitXpense - Free Bill Splitting App">
+    <meta property="og:description" content="Easily split bills and track shared expenses with friends, roommates, and travel groups. Free, fast, and no signup required.">
     <meta property="og:url" content="https://splitxpense.vercel.app">
     <meta property="og:image" content="https://splitxpense.vercel.app/images/preview.png">
     <meta property="og:type" content="website">
+    <meta property="og:site_name" content="SplitXpense">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="SplitXpense - Free Bill Splitting App">
+    <meta name="twitter:description" content="Split bills and track shared expenses with friends, roommates, and travel groups. Free and easy.">
+    <meta name="twitter:image" content="https://splitxpense.vercel.app/images/preview.png">
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://splitxpense.vercel.app/">
+    <!-- Structured Data (JSON-LD) — tells Google exactly what this app is -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "SplitXpense",
+      "url": "https://splitxpense.vercel.app",
+      "description": "Free bill splitting app to share expenses with friends, roommates, and travel groups. Track who owes what and settle up easily.",
+      "applicationCategory": "FinanceApplication",
+      "operatingSystem": "Any",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Split bills with friends",
+        "Group expense tracking",
+        "Settle up tracking",
+        "Roommate expense management",
+        "Travel expense splitting",
+        "No signup required"
+      ],
+      "screenshot": "https://splitxpense.vercel.app/images/preview.png"
+    }
+    </script>
     <!-- Google Fonts - Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
