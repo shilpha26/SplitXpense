@@ -258,6 +258,30 @@
             align-items: center;
             gap: var(--space-3);
             margin-bottom: var(--space-4);
+            flex-wrap: wrap;
+        }
+        .admin-sort-btns {
+            display: flex;
+            gap: var(--space-1);
+            margin-left: auto;
+        }
+        .admin-sort-btn {
+            padding: 4px 12px;
+            font-size: var(--text-xs);
+            font-weight: 500;
+            font-family: var(--font-family);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-full);
+            background: var(--surface);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .admin-sort-btn:hover { border-color: var(--primary-400); color: var(--primary-600); }
+        .admin-sort-btn.active {
+            background: var(--primary-600);
+            border-color: var(--primary-600);
+            color: #fff;
         }
         .admin-section-title {
             font-size: var(--text-base);
@@ -1374,7 +1398,7 @@
 
                 var iconUsers = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
                 var iconGroups = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>';
-                var iconExp = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+                var iconExp = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12"/><path d="M6 8h12"/><path d="m6 13 8.5 8"/><path d="M6 13h3"/><path d="M9 13a6 6 0 0 0 0-10"/></svg>';
 
                 var newUsersThisMonth = (function() {
                     var now = new Date();
@@ -1452,11 +1476,28 @@
                 });
             }
 
+            var currentSort = 'date'; /* 'date' | 'groups' */
+
             /* ---- renderTable: section bar + user table only (called on every expand/collapse) ---- */
             function renderTable(stats) {
-                var users = stats.users || [];
+                var users = (stats.users || []).slice();
+                if (currentSort === 'groups') {
+                    users.sort(function(a, b) { return (b.groupCount || 0) - (a.groupCount || 0); });
+                } else {
+                    users.sort(function(a, b) {
+                        var da = new Date(a.created_at || a.createdAt || 0);
+                        var db = new Date(b.created_at || b.createdAt || 0);
+                        return db - da;
+                    });
+                }
                 var th = '';
-                th += '<div class="admin-section-bar"><span class="admin-section-title">All Users</span><span class="admin-section-count">' + users.length + '</span></div>';
+                th += '<div class="admin-section-bar">' +
+                    '<span class="admin-section-title">All Users</span><span class="admin-section-count">' + users.length + '</span>' +
+                    '<div class="admin-sort-btns">' +
+                    '<button class="admin-sort-btn' + (currentSort === 'date' ? ' active' : '') + '" data-sort="date">Latest</button>' +
+                    '<button class="admin-sort-btn' + (currentSort === 'groups' ? ' active' : '') + '" data-sort="groups">Most Groups</button>' +
+                    '</div>' +
+                    '</div>';
                 th += '<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>User</th><th>Joined</th><th>Groups</th></tr></thead><tbody>';
                 users.forEach(function(u, i) {
                     var id = (u.id != null) ? String(u.id) : '—';
@@ -1490,6 +1531,15 @@
                 th += '</tbody></table></div>';
 
                 document.getElementById('adminTableSection').innerHTML = th;
+
+                document.querySelectorAll('.admin-sort-btn').forEach(function(btn) {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        currentSort = btn.getAttribute('data-sort');
+                        expandedIndex = -1;
+                        renderTable(currentStats);
+                    });
+                });
 
                 document.querySelectorAll('.admin-table tbody tr:not(.expand-row)').forEach(function(el) {
                     if (el.classList.contains('expand-row')) return;
