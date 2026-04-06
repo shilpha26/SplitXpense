@@ -1,5 +1,11 @@
 {
   "trailingSlash": false,
+  "crons": [
+    {
+      "path": "/api/health",
+      "schedule": "30 19 * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
     { "source": "/group-detail", "destination": "/group-detail.html" },

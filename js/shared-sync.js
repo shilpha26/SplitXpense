@@ -1874,7 +1874,14 @@ async function fetchAllUsersForAdmin() {
 
 async function fetchAdminStats() {
     if (!window.supabaseClient) {
-        return { users: [], totalGroups: 0, totalExpenses: 0, groupsList: [], error: 'No Supabase client' };
+        return {
+            users: [],
+            totalGroups: 0,
+            totalExpenses: 0,
+            groupsList: [],
+            error: 'No Supabase client',
+            appHealth: { last_ping_at: null, ping_count: null, error: null, ping_days_ist: [] }
+        };
     }
     await detectDatabaseSchema();
     const groupSchema = SCHEMA_MAPPING.groups;
@@ -1916,11 +1923,58 @@ async function fetchAdminStats() {
         }
         return Object.assign({}, u, { groupCount: count, groupNames: groupNames });
     });
+    var appHealth = { last_ping_at: null, ping_count: null, error: null, ping_days_ist: [] };
+    try {
+        const { data: hRow, error: hErr } = await window.supabaseClient
+            .from('app_health')
+            .select('last_ping_at, ping_count')
+            .eq('id', 1)
+            .maybeSingle();
+        if (hErr) {
+            appHealth.error = hErr.message || String(hErr.code || 'read failed');
+        } else if (hRow) {
+            appHealth.last_ping_at = hRow.last_ping_at;
+            appHealth.ping_count = hRow.ping_count;
+        }
+    } catch (e) {
+        appHealth.error = e && e.message ? e.message : String(e);
+    }
+
+    try {
+        const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: logRows, error: logErr } = await window.supabaseClient
+            .from('health_ping_log')
+            .select('pinged_at')
+            .gte('pinged_at', since);
+        if (!logErr && logRows && logRows.length) {
+            var seen = {};
+            logRows.forEach(function(row) {
+                var raw = row.pinged_at;
+                if (!raw) return;
+                try {
+                    var key = new Intl.DateTimeFormat('en-CA', {
+                        timeZone: 'Asia/Kolkata',
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit'
+                    }).format(new Date(raw));
+                    if (key) seen[key] = true;
+                } catch (e2) {}
+            });
+            appHealth.ping_days_ist = Object.keys(seen).sort();
+        } else if (logErr) {
+            console.warn('Admin: health_ping_log read failed', logErr);
+        }
+    } catch (e3) {
+        console.warn('Admin: health_ping_log', e3);
+    }
+
     return {
         users: usersWithCounts,
         totalGroups: totalGroups,
         totalExpenses: expensesCount != null ? expensesCount : 0,
-        groupsList: groupsList || []
+        groupsList: groupsList || [],
+        appHealth: appHealth
     };
 }
 

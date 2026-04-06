@@ -4,12 +4,17 @@
   "description": "SplitXpense - Expense Splitting App with Supabase",
   "scripts": {
     "dev": "node scripts/generate-config.js && python -m http.server 8000",
+    "dev:ping": "node scripts/run-ping-health.js",
+    "dev:vercel": "npx vercel dev",
     "generate-config": "node scripts/generate-config.js",
     "start": "node scripts/generate-config.js && python -m http.server 8000"
   },
   "keywords": ["expense", "split", "splitxpense"],
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1"
+  },
   "devDependencies": {
     "dotenv": "^16.3.1"
   }
