@@ -316,14 +316,6 @@
             font-variant-numeric: tabular-nums;
             line-height: 1.25;
         }
-        .admin-health-hint {
-            margin: var(--space-5) 0 0 0;
-            padding-top: var(--space-4);
-            border-top: 1px solid var(--health-line);
-            font-size: var(--text-xs);
-            color: var(--health-muted);
-            line-height: 1.55;
-        }
         .admin-health-code {
             margin: var(--space-3) 0 0 0;
             font-size: 11px;
@@ -379,18 +371,6 @@
             border-color: var(--primary-400);
             box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
         }
-        .admin-health-cal-toolbar-note {
-            font-size: 10px;
-            color: var(--health-muted);
-            margin-left: auto;
-            letter-spacing: 0.02em;
-        }
-        @media (max-width: 640px) {
-            .admin-health-cal-toolbar-note {
-                width: 100%;
-                margin-left: 0;
-            }
-        }
         .admin-health-cal-months {
             display: grid;
             width: 100%;
@@ -401,11 +381,6 @@
         @media (min-width: 769px) {
             .admin-health-cal-months {
                 grid-template-columns: repeat(4, max-content);
-            }
-        }
-        @media (min-width: 769px) {
-            .admin-health-cal-toolbar-note--mobile {
-                display: none;
             }
         }
         .admin-health-cal-month {
@@ -492,6 +467,99 @@
             color: #a16207;
             border-color: rgba(245, 158, 11, 0.35);
             box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+        }
+        .admin-health-cal-cell--interactive {
+            cursor: pointer;
+        }
+        .admin-health-cal-cell--interactive:hover {
+            transform: scale(1.08);
+            z-index: 1;
+        }
+        .admin-health-cal-cell--interactive:focus-visible {
+            outline: 2px solid var(--primary-500);
+            outline-offset: 1px;
+        }
+        .admin-health-cal-detail {
+            margin-top: var(--space-4);
+            width: 100%;
+            max-width: 100%;
+        }
+        .admin-health-cal-detail[hidden] {
+            display: none !important;
+        }
+        .admin-health-cal-detail-card {
+            background: linear-gradient(165deg, #fafbfc 0%, #f4f7fa 100%);
+            border: 1px solid var(--health-line-strong);
+            border-radius: var(--radius-lg);
+            padding: var(--space-4);
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        .admin-health-cal-detail-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--space-3);
+            margin-bottom: var(--space-3);
+        }
+        .admin-health-cal-detail-title {
+            margin: 0;
+            font-size: var(--text-sm);
+            font-weight: 600;
+            color: var(--health-ink);
+            letter-spacing: -0.02em;
+        }
+        .admin-health-cal-detail-close {
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            border: 1px solid var(--health-line-strong);
+            border-radius: var(--radius-full);
+            background: #fff;
+            color: var(--health-muted);
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+        .admin-health-cal-detail-close:hover {
+            background: var(--health-elevated);
+            color: var(--health-ink);
+        }
+        .admin-health-cal-detail-body {
+            font-size: var(--text-xs);
+            color: var(--health-ink);
+        }
+        .admin-health-cal-detail-msg {
+            margin: 0;
+            color: var(--health-muted);
+            line-height: 1.5;
+        }
+        .admin-health-cal-detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+        .admin-health-cal-detail-table th,
+        .admin-health-cal-detail-table td {
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--health-line);
+        }
+        .admin-health-cal-detail-table th {
+            color: var(--health-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-size: 9px;
+        }
+        .admin-health-cal-detail-table tr:last-child td {
+            border-bottom: none;
+        }
+        .admin-health-cal-detail-table td {
+            font-variant-numeric: tabular-nums;
         }
         .admin-health-cal-legend {
             display: flex;
@@ -595,16 +663,10 @@
             .admin-health-metric-value {
                 font-size: var(--text-base);
             }
-            .admin-health-hint {
-                font-size: 11px;
-                line-height: 1.55;
-                margin-top: var(--space-3);
-                padding-top: var(--space-3);
-            }
             .admin-health-cal-toolbar {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
-                grid-template-rows: auto auto auto;
+                grid-template-rows: auto auto;
                 gap: 6px 12px;
                 align-items: center;
                 margin-bottom: var(--space-4);
@@ -633,14 +695,6 @@
                 padding: 8px 12px;
                 font-size: 16px;
             }
-            .admin-health-cal-toolbar-note--mobile {
-                grid-column: 1 / -1;
-                grid-row: 3;
-                margin-left: 0;
-                width: 100%;
-                padding-top: 2px;
-                text-align: center;
-            }
             /* Two months in one row — compact grid (~137px + gap + ~137px fits ~320px content) */
             .admin-health-cal-months {
                 display: grid;
@@ -662,9 +716,6 @@
                 flex-shrink: 0;
             }
             .admin-health-cal-month:nth-child(n + 3) {
-                display: none;
-            }
-            .admin-health-cal-toolbar-note--desktop {
                 display: none;
             }
             .admin-health-cal-month .admin-health-cal-title {
@@ -1960,8 +2011,117 @@
                 (ah.ping_days_ist || []).forEach(function(k) { pingSet[k] = true; });
                 return pingSet;
             }
+            /** Same rule as the Healthy pill: last ping within 48h, no read error. */
+            function isHealthStatusUp(ah) {
+                if (!ah || ah.error) return false;
+                var last = ah.last_ping_at;
+                if (!last) return false;
+                var d = new Date(last);
+                if (isNaN(d.getTime())) return false;
+                var ageMs = Date.now() - d.getTime();
+                return ageMs <= 48 * 60 * 60 * 1000;
+            }
             function todayKeyIST() {
                 return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+            }
+            function formatHealthPingIstTime(iso) {
+                if (!iso) return '—';
+                try {
+                    var d = new Date(iso);
+                    if (isNaN(d.getTime())) return '—';
+                    return new Intl.DateTimeFormat(undefined, {
+                        timeZone: 'Asia/Kolkata',
+                        dateStyle: 'medium',
+                        timeStyle: 'medium'
+                    }).format(d);
+                } catch (e) { return '—'; }
+            }
+            function formatDurationMs(ms) {
+                if (ms == null || ms === '' || isNaN(Number(ms))) return '—';
+                var n = Number(ms);
+                if (n < 1000) return String(Math.round(n)) + ' ms';
+                return (n / 1000).toFixed(n < 10000 ? 2 : 1) + ' s';
+            }
+            function formatIstDateTitle(dateKey) {
+                var parts = dateKey.split('-');
+                if (parts.length !== 3) return dateKey + ' (IST)';
+                var y = parseInt(parts[0], 10);
+                var m = parseInt(parts[1], 10);
+                var day = parseInt(parts[2], 10);
+                if (isNaN(y) || isNaN(m) || isNaN(day)) return dateKey + ' (IST)';
+                var noonIstUtc = Date.UTC(y, m - 1, day, 6, 30, 0);
+                try {
+                    var s = new Intl.DateTimeFormat('en-US', {
+                        timeZone: 'Asia/Kolkata',
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                    }).format(new Date(noonIstUtc));
+                    return s + ' (IST)';
+                } catch (e2) { return dateKey + ' (IST)'; }
+            }
+            function buildHealthCalDetailHtml(dateKey, dayStatus, ah, todayKey) {
+                var byDay = (ah && ah.ping_log_by_day_ist) ? ah.ping_log_by_day_ist : {};
+                var rows = byDay[dateKey] || [];
+                if (dateKey > todayKey) {
+                    return '<p class="admin-health-cal-detail-msg">This calendar day has not started yet (IST).</p>';
+                }
+                var html = '';
+                if (rows.length > 0) {
+                    html += '<table class="admin-health-cal-detail-table"><thead><tr>';
+                    html += '<th>#</th><th>Time (IST)</th><th>Duration</th><th>Status</th></tr></thead><tbody>';
+                    var idx;
+                    for (idx = 0; idx < rows.length; idx++) {
+                        var r = rows[idx];
+                        html += '<tr>';
+                        html += '<td>' + String(idx + 1) + '</td>';
+                        html += '<td>' + escapeHtml(formatHealthPingIstTime(r.pinged_at)) + '</td>';
+                        html += '<td>' + escapeHtml(formatDurationMs(r.duration_ms)) + '</td>';
+                        html += '<td>OK</td>';
+                        html += '</tr>';
+                    }
+                    html += '</tbody></table>';
+                    return html;
+                }
+                if (ah && ah.last_ping_at) {
+                    try {
+                        var lastKey = new Intl.DateTimeFormat('en-CA', {
+                            timeZone: 'Asia/Kolkata',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit'
+                        }).format(new Date(ah.last_ping_at));
+                        if (lastKey === dateKey) {
+                            html += '<table class="admin-health-cal-detail-table"><thead><tr>';
+                            html += '<th>#</th><th>Time (IST)</th><th>Duration</th><th>Status</th></tr></thead><tbody>';
+                            html += '<tr><td>1</td><td>' + escapeHtml(formatHealthPingIstTime(ah.last_ping_at)) + '</td><td>—</td><td>OK</td></tr>';
+                            html += '</tbody></table>';
+                            return html;
+                        }
+                    } catch (e3) {}
+                }
+                if (dateKey === todayKey) {
+                    return '<p class="admin-health-cal-detail-msg">No ping recorded yet for today (IST).</p>';
+                }
+                return '<p class="admin-health-cal-detail-msg">No successful ping recorded for this calendar day.</p>';
+            }
+            function openAdminHealthCalDetail(dateKey, dayStatus) {
+                var detail = document.getElementById('adminHealthCalDetail');
+                var titleEl = document.getElementById('adminHealthCalDetailTitle');
+                var bodyEl = document.getElementById('adminHealthCalDetailBody');
+                if (!detail || !titleEl || !bodyEl) return;
+                var ah = (currentStats && currentStats.appHealth) ? currentStats.appHealth : {};
+                var todayKey = todayKeyIST();
+                titleEl.textContent = formatIstDateTitle(dateKey);
+                bodyEl.innerHTML = buildHealthCalDetailHtml(dateKey, dayStatus, ah, todayKey);
+                detail.hidden = false;
+                var closeBtn = document.getElementById('adminHealthCalDetailClose');
+                if (closeBtn) closeBtn.focus();
+            }
+            function closeAdminHealthCalDetail() {
+                var detail = document.getElementById('adminHealthCalDetail');
+                if (detail) detail.hidden = true;
             }
             var HEALTH_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             var HEALTH_CAL_MONTH_COUNT = 4;
@@ -1981,10 +2141,11 @@
                 }
                 return html;
             }
-            function buildSingleMonthInnerHtml(y, m, pingSet, todayKey) {
+            function buildSingleMonthInnerHtml(y, m, pingSet, todayKey, ah) {
                 var title = HEALTH_MONTH_NAMES[m - 1] + ' ' + y;
                 var dim = daysInMonthGreg(y, m);
                 var lead = istWeekdayMon0(y, m, 1);
+                var healthUp = isHealthStatusUp(ah || {});
                 var html = '';
                 html += '<div class="admin-health-cal-title">' + escapeHtml(title) + ' <span>(IST)</span></div>';
                 html += '<div class="admin-health-cal-weekdays">';
@@ -2001,9 +2162,9 @@
                     var key = y + '-' + String(m).padStart(2, '0') + '-' + String(day).padStart(2, '0');
                     var cls;
                     if (key > todayKey) cls = 'future';
-                    else if (key === todayKey) cls = pingSet[key] ? 'ok' : 'pending';
+                    else if (key === todayKey) cls = (pingSet[key] || healthUp) ? 'ok' : 'pending';
                     else cls = pingSet[key] ? 'ok' : 'bad';
-                    html += '<div class="admin-health-cal-cell ' + cls + '" title="' + escapeHtml(key) + '">' + day + '</div>';
+                    html += '<div class="admin-health-cal-cell admin-health-cal-cell--interactive ' + cls + '" data-date-key="' + escapeHtml(key) + '" data-day-status="' + cls + '" role="button" tabindex="0" title="' + escapeHtml(key) + ' · tap for details">' + day + '</div>';
                 }
                 var used = lead + dim;
                 var tail = (7 - (used % 7)) % 7;
@@ -2020,7 +2181,7 @@
                 var k;
                 for (k = 0; k < numMonths; k++) {
                     var ym = addMonths(viewY, viewM, k);
-                    html += '<div class="admin-health-cal-month">' + buildSingleMonthInnerHtml(ym.y, ym.m, pingSet, todayKey) + '</div>';
+                    html += '<div class="admin-health-cal-month">' + buildSingleMonthInnerHtml(ym.y, ym.m, pingSet, todayKey, ah) + '</div>';
                 }
                 return html;
             }
@@ -2038,20 +2199,26 @@
                 html += '<select id="adminHealthCalMonth" aria-label="Month (IST)">' + buildMonthSelectOptions(viewM) + '</select>';
                 html += '<label class="admin-health-cal-lab" for="adminHealthCalYear">Year</label>';
                 html += '<select id="adminHealthCalYear" aria-label="Year (IST)">' + buildYearSelectOptions(viewY, yearMin, yearMax) + '</select>';
-                html += '<span class="admin-health-cal-toolbar-note admin-health-cal-toolbar-note--desktop">IST · next 4 months</span>';
-                html += '<span class="admin-health-cal-toolbar-note admin-health-cal-toolbar-note--mobile">IST · next 2 months</span>';
                 html += '</div>';
                 html += '<div id="adminHealthCalMount" class="admin-health-cal-months">';
                 var k;
                 for (k = 0; k < numMonths; k++) {
                     var ym = addMonths(viewY, viewM, k);
-                    html += '<div class="admin-health-cal-month">' + buildSingleMonthInnerHtml(ym.y, ym.m, pingSet, todayKey) + '</div>';
+                    html += '<div class="admin-health-cal-month">' + buildSingleMonthInnerHtml(ym.y, ym.m, pingSet, todayKey, ah) + '</div>';
                 }
                 html += '</div>';
+                html += '<div id="adminHealthCalDetail" class="admin-health-cal-detail" hidden>';
+                html += '<div class="admin-health-cal-detail-card">';
+                html += '<div class="admin-health-cal-detail-head">';
+                html += '<h4 id="adminHealthCalDetailTitle" class="admin-health-cal-detail-title"></h4>';
+                html += '<button type="button" class="admin-health-cal-detail-close" id="adminHealthCalDetailClose" aria-label="Close ping details">×</button>';
+                html += '</div>';
+                html += '<div id="adminHealthCalDetailBody" class="admin-health-cal-detail-body"></div>';
+                html += '</div></div>';
                 html += '<div class="admin-health-cal-legend">';
-                html += '<span><span class="admin-health-cal-dot ok"></span> OK</span>';
+                html += '<span title="Ping that day, or today when status is up (Healthy)"><span class="admin-health-cal-dot ok"></span> OK</span>';
                 html += '<span><span class="admin-health-cal-dot bad"></span> Miss</span>';
-                html += '<span><span class="admin-health-cal-dot pending"></span> Today</span>';
+                html += '<span title="Today (IST) when not yet up"><span class="admin-health-cal-dot pending"></span> Today</span>';
                 html += '<span><span class="admin-health-cal-dot future"></span> Later</span>';
                 html += '</div></div>';
                 return html;
@@ -2060,8 +2227,10 @@
                 var yEl = document.getElementById('adminHealthCalYear');
                 var mEl = document.getElementById('adminHealthCalMonth');
                 var mount = document.getElementById('adminHealthCalMount');
+                var section = document.getElementById('adminHealthSection');
                 if (!yEl || !mEl || !mount) return;
                 function refresh() {
+                    closeAdminHealthCalDetail();
                     var y = parseInt(yEl.value, 10);
                     var m = parseInt(mEl.value, 10);
                     if (isNaN(y) || isNaN(m) || m < 1 || m > 12) return;
@@ -2071,6 +2240,44 @@
                 }
                 yEl.addEventListener('change', refresh);
                 mEl.addEventListener('change', refresh);
+                if (section && !section.dataset.healthCalUiBound) {
+                    section.dataset.healthCalUiBound = '1';
+                    section.addEventListener('click', function(e) {
+                        if (e.target.closest && e.target.closest('#adminHealthCalDetailClose')) {
+                            closeAdminHealthCalDetail();
+                            return;
+                        }
+                        var cell = e.target.closest('.admin-health-cal-cell--interactive');
+                        if (!cell) return;
+                        var dk = cell.getAttribute('data-date-key');
+                        var st = cell.getAttribute('data-day-status') || '';
+                        if (dk) openAdminHealthCalDetail(dk, st);
+                    });
+                    section.addEventListener('keydown', function(e) {
+                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                        var cell = e.target.closest('.admin-health-cal-cell--interactive');
+                        if (!cell) return;
+                        e.preventDefault();
+                        var dk = cell.getAttribute('data-date-key');
+                        var st = cell.getAttribute('data-day-status') || '';
+                        if (dk) openAdminHealthCalDetail(dk, st);
+                    });
+                }
+                if (!window._adminHealthCalGlobalBound) {
+                    window._adminHealthCalGlobalBound = true;
+                    document.addEventListener('keydown', function(e) {
+                        if (e.key !== 'Escape') return;
+                        var d = document.getElementById('adminHealthCalDetail');
+                        if (d && !d.hidden) closeAdminHealthCalDetail();
+                    });
+                    document.addEventListener('mousedown', function(e) {
+                        var d = document.getElementById('adminHealthCalDetail');
+                        if (!d || d.hidden) return;
+                        if (d.contains(e.target)) return;
+                        if (e.target.closest && e.target.closest('.admin-health-cal-cell--interactive')) return;
+                        closeAdminHealthCalDetail();
+                    });
+                }
             }
 
             function renderHealth(stats) {
@@ -2137,7 +2344,6 @@
                 html += '<div><div class="admin-health-metric-label">Total pings</div><div class="admin-health-metric-value">' + (count != null ? escapeHtml(String(count)) : '—') + '</div></div>';
                 html += '</div>';
                 html += buildHealthCalendarSectionHtml(ah, viewY, viewM);
-                html += '<p class="admin-health-hint">Cron runs <strong>daily at 1:00 IST</strong> (<code style="font-size:11px;">19:30 UTC</code> · Vercel cron). <strong>Run ping</strong> uses your session. Add <strong>health_ping_log</strong> via <strong>supabase-health-keepalive.sql</strong> for the calendar. Env: <strong>.env.example</strong>.</p>';
                 if (err) {
                     html += '<p class="admin-health-code">' + escapeHtml(err) + '</p>';
                 }

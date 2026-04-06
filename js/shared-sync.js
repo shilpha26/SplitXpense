@@ -1880,7 +1880,13 @@ async function fetchAdminStats() {
             totalExpenses: 0,
             groupsList: [],
             error: 'No Supabase client',
-            appHealth: { last_ping_at: null, ping_count: null, error: null, ping_days_ist: [] }
+            appHealth: {
+                last_ping_at: null,
+                ping_count: null,
+                error: null,
+                ping_days_ist: [],
+                ping_log_by_day_ist: {}
+            }
         };
     }
     await detectDatabaseSchema();
@@ -1923,7 +1929,7 @@ async function fetchAdminStats() {
         }
         return Object.assign({}, u, { groupCount: count, groupNames: groupNames });
     });
-    var appHealth = { last_ping_at: null, ping_count: null, error: null, ping_days_ist: [] };
+    var appHealth = { last_ping_at: null, ping_count: null, error: null, ping_days_ist: [], ping_log_by_day_ist: {} };
     try {
         const { data: hRow, error: hErr } = await window.supabaseClient
             .from('app_health')
@@ -1940,34 +1946,58 @@ async function fetchAdminStats() {
         appHealth.error = e && e.message ? e.message : String(e);
     }
 
+    var pingDaysSeen = {};
     try {
         const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
         const { data: logRows, error: logErr } = await window.supabaseClient
             .from('health_ping_log')
-            .select('pinged_at')
+            .select('*')
             .gte('pinged_at', since);
         if (!logErr && logRows && logRows.length) {
-            var seen = {};
+            appHealth.ping_log_by_day_ist = {};
             logRows.forEach(function(row) {
                 var raw = row.pinged_at;
                 if (!raw) return;
                 try {
-                    var key = new Intl.DateTimeFormat('en-CA', {
+                    var dayKey = new Intl.DateTimeFormat('en-CA', {
                         timeZone: 'Asia/Kolkata',
                         year: 'numeric',
                         month: '2-digit',
                         day: '2-digit'
                     }).format(new Date(raw));
-                    if (key) seen[key] = true;
+                    if (!dayKey) return;
+                    pingDaysSeen[dayKey] = true;
+                    if (!appHealth.ping_log_by_day_ist[dayKey]) appHealth.ping_log_by_day_ist[dayKey] = [];
+                    var dm = row.duration_ms;
+                    appHealth.ping_log_by_day_ist[dayKey].push({
+                        pinged_at: raw,
+                        duration_ms: dm != null && dm !== '' ? Number(dm) : null
+                    });
                 } catch (e2) {}
             });
-            appHealth.ping_days_ist = Object.keys(seen).sort();
+            Object.keys(appHealth.ping_log_by_day_ist).forEach(function(k) {
+                appHealth.ping_log_by_day_ist[k].sort(function(a, b) {
+                    return new Date(a.pinged_at) - new Date(b.pinged_at);
+                });
+            });
         } else if (logErr) {
             console.warn('Admin: health_ping_log read failed', logErr);
         }
     } catch (e3) {
         console.warn('Admin: health_ping_log', e3);
     }
+    if (appHealth.last_ping_at) {
+        try {
+            var lastPingDayKey = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Kolkata',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            }).format(new Date(appHealth.last_ping_at));
+            if (lastPingDayKey) pingDaysSeen[lastPingDayKey] = true;
+        } catch (e4) {}
+    }
+    appHealth.ping_days_ist = Object.keys(pingDaysSeen).sort();
 
     return {
         users: usersWithCounts,

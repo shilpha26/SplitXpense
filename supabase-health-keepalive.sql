@@ -1,5 +1,7 @@
 -- One-row table for Vercel cron /api/health pings (keeps Supabase Postgres active).
--- Run once in Supabase SQL Editor.
+-- Run the ENTIRE file in Supabase SQL Editor in one go (not a single ALTER line).
+-- If you only ran ALTER ... duration_ms and got "relation health_ping_log does not exist",
+-- run from "-- One row per successful ping" through the policy at the end of this file.
 
 CREATE TABLE IF NOT EXISTS public.app_health (
   id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -28,10 +30,14 @@ ON CONFLICT (id) DO NOTHING;
 -- One row per successful ping (for admin calendar). Service role inserts; anon can read.
 CREATE TABLE IF NOT EXISTS public.health_ping_log (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  pinged_at timestamptz NOT NULL DEFAULT now()
+  pinged_at timestamptz NOT NULL DEFAULT now(),
+  duration_ms integer
 );
 
 CREATE INDEX IF NOT EXISTS health_ping_log_ping_at_idx ON public.health_ping_log (pinged_at DESC);
+
+-- If the table already existed with only (id, pinged_at), add duration:
+ALTER TABLE public.health_ping_log ADD COLUMN IF NOT EXISTS duration_ms integer;
 
 ALTER TABLE public.health_ping_log ENABLE ROW LEVEL SECURITY;
 
