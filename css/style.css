@@ -3039,3 +3039,459 @@ a:focus-visible {
         border: 1px solid #ccc;
     }
 }
+
+/* ---------------------------------------------------------------
+ * Group expense filters (search, paid by, category chips)
+ * -------------------------------------------------------------- */
+.expense-filters {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3, 0.75rem);
+    margin-bottom: var(--space-4);
+}
+
+.expense-filter-row {
+    display: flex;
+    gap: var(--space-2, 0.5rem);
+    flex-wrap: wrap;
+}
+
+.expense-filter-search,
+.expense-filter-select {
+    min-height: 44px;
+    padding: 0 0.875rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+}
+
+.expense-filter-search {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+.expense-filter-select {
+    flex: 0 1 200px;
+}
+
+.expense-filter-search:focus,
+.expense-filter-select:focus {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 1px;
+}
+
+.expense-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.expense-chip {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 0 0.875rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold, 600);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.expense-chip span {
+    margin-left: 0.25rem;
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+.expense-chip.active {
+    background: var(--primary-600);
+    border-color: var(--primary-600);
+    color: var(--text-inverse);
+}
+
+.expense-chip.active span {
+    color: var(--text-inverse);
+    opacity: 0.85;
+}
+
+.expense-filter-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.expense-filter-summary:empty {
+    display: none;
+}
+
+.expense-filter-clear {
+    border: 0;
+    background: none;
+    color: var(--primary-700);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+}
+
+.expense-filter-empty {
+    text-align: center;
+    padding: var(--space-8, 2rem) var(--space-4);
+    color: var(--text-secondary);
+}
+
+.expense-cat-tag {
+    display: inline-block;
+    margin-right: 0.5rem;
+    margin-bottom: 2px;
+    padding: 1px 8px;
+    border-radius: var(--radius-full);
+    background: var(--border-subtle);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    vertical-align: middle;
+}
+
+.expense-cat-tag.cat-fun { background: #fefce8; color: #a16207; }
+.expense-cat-tag.cat-food { background: #fff7ed; color: #c2410c; }
+.expense-cat-tag.cat-stay { background: #eef2ff; color: #4338ca; }
+.expense-cat-tag.cat-travel { background: #ecfeff; color: #0e7490; }
+.expense-cat-tag.cat-temple { background: #fdf4ff; color: #a21caf; }
+.expense-cat-tag.cat-shopping { background: #fff1f2; color: #be123c; }
+
+/* Floating "+" for adding an expense. Phones only. */
+.expense-fab {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    /* The button row only held Add Expense (Show details is already hidden on phones) */
+    .expenses-section .expenses-toolbar {
+        display: none;
+    }
+
+    .expense-fab {
+        position: fixed;
+        right: max(1rem, env(safe-area-inset-right));
+        bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+        z-index: var(--z-sticky);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 56px;
+        height: 56px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+        color: var(--text-inverse);
+        box-shadow: 0 6px 16px rgba(22, 163, 74, 0.4), 0 2px 4px rgba(0, 0, 0, 0.15);
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .expense-fab svg {
+        width: 26px;
+        height: 26px;
+    }
+
+    .expense-fab:active {
+        transform: scale(0.94);
+    }
+
+    /* Keeps the end of the page (Show details, footer) clear of the button */
+    .balances-section {
+        padding-bottom: 6rem;
+    }
+
+    /* Compact empty states and spacing between sections */
+    .empty-state {
+        padding: 1.25rem 1rem;
+        margin: 0.75rem 0;
+    }
+
+    .empty-state::before {
+        width: 64px;
+        height: 64px;
+        margin-bottom: 0.75rem;
+        animation: none;
+    }
+
+    .empty-state p {
+        font-size: var(--text-sm);
+        margin-bottom: 0.25rem;
+    }
+
+    .empty-state p:first-of-type {
+        font-size: var(--text-base);
+    }
+
+    .empty-state p:last-of-type {
+        margin-bottom: 0.75rem;
+        font-size: var(--text-sm);
+    }
+
+    .empty-state .btn-success {
+        margin-top: 0.25rem;
+        padding: 0.625rem var(--space-4);
+    }
+
+    .balances-section {
+        margin-top: var(--space-4);
+    }
+
+    .balances-header {
+        margin-bottom: var(--space-2);
+    }
+
+    .balances-header h3 {
+        font-size: var(--text-lg);
+    }
+
+    .no-settlements,
+    .no-balances {
+        padding: var(--space-4);
+    }
+}
+
+/* Payer list + chips live in a panel. Always open on wide screens, tucked away on phones. */
+.expense-filter-panel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.expense-filter-panel .expense-chips {
+    margin-top: 0;
+    flex: 1 1 100%;
+}
+
+.expense-filter-toggle {
+    display: none;
+}
+
+.expense-meta-each {
+    display: none;
+}
+
+/* Laptop and tablet: search and "paid by" on one line, chips underneath, nothing hidden */
+@media (min-width: 769px) {
+    .expense-filters {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 220px;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    .expense-filter-panel {
+        display: contents;
+    }
+
+    .expense-filter-panel .expense-filter-select {
+        width: 100%;
+        flex: none;
+    }
+
+    .expense-filter-panel .expense-chips,
+    .expense-filters .expense-filter-summary {
+        grid-column: 1 / -1;
+        margin-top: 0;
+    }
+}
+
+@media (max-width: 768px) {
+    /* 16px stops iOS from zooming the page when the field is tapped */
+    .expense-filter-search,
+    .expense-filter-select {
+        font-size: 1rem;
+        min-height: 40px;
+    }
+
+    .expense-filters {
+        padding: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .expense-filter-row {
+        flex-wrap: nowrap;
+    }
+
+    .expense-filter-search {
+        flex: 1 1 auto;
+    }
+
+    .expense-filter-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex: 0 0 auto;
+        min-height: 40px;
+        padding: 0 0.875rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        color: var(--text-primary);
+        font: inherit;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .expense-filters.open .expense-filter-toggle {
+        background: var(--primary-50);
+        border-color: var(--primary-500);
+        color: var(--primary-700);
+    }
+
+    .expense-filter-badge {
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border-radius: var(--radius-full);
+        background: var(--primary-600);
+        color: var(--text-inverse);
+        font-size: 0.6875rem;
+    }
+
+    .expense-filter-panel {
+        display: none;
+        margin-top: 0.5rem;
+    }
+
+    .expense-filters.open .expense-filter-panel {
+        display: flex;
+    }
+
+    .expense-filter-select {
+        flex: 1 1 100%;
+    }
+
+    .expense-chips {
+        gap: 0.35rem;
+    }
+
+    .expense-chip {
+        min-height: 30px;
+        padding: 0 0.625rem;
+        font-size: 0.8125rem;
+    }
+
+    .expense-filter-summary {
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+        font-size: 0.8125rem;
+    }
+}
+
+/* Mobile expense rows: two compact lines.
+ *   Title ........................ amount
+ *   [tag] paid by / split ........ edit delete
+ */
+@media (max-width: 640px) {
+    .expense-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 0.75rem;
+        row-gap: 0.4rem;
+        align-items: center;
+        padding: 0.875rem 1rem;
+    }
+
+    .expense-item .expense-content {
+        display: contents;
+    }
+
+    .expense-item .expense-content h4 {
+        grid-column: 1;
+        grid-row: 1;
+        margin: 0;
+        padding-right: 0;
+        font-size: 1rem;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+
+    .expense-item .expense-amount {
+        grid-column: 2;
+        grid-row: 1;
+        margin: 0;
+        font-size: 1.0625rem;
+        text-align: right;
+        justify-self: end;
+    }
+
+    /* Full width, so the names of everyone in the split fit on fewer lines */
+    .expense-item .expense-meta {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        font-size: 0.8125rem;
+        line-height: 1.5;
+        margin: 0;
+        width: auto;
+    }
+
+    .expense-item .per-person-amount {
+        grid-column: 1;
+        grid-row: 3;
+        justify-self: start;
+        text-align: left;
+        margin: 0;
+        font-size: 0.8125rem;
+    }
+
+    .expense-item .expense-cat-tag {
+        margin-right: 0.5rem;
+        padding: 1px 8px;
+        font-size: 0.6875rem;
+        vertical-align: 1px;
+    }
+
+    .expense-item .expense-actions {
+        position: static;
+        grid-column: 2;
+        grid-row: 3;
+        justify-self: end;
+        flex-direction: row;
+        gap: 6px;
+    }
+
+    .expense-item .expense-action-btn {
+        width: 34px;
+        height: 34px;
+    }
+
+    /* Less empty space around the page's top blocks */
+    .total-expenses {
+        padding: var(--space-3) var(--space-4);
+        margin: var(--space-3) 0;
+    }
+
+    .total-expenses h2 {
+        font-size: var(--text-xl);
+    }
+
+    .expenses-section .section-header {
+        margin: var(--space-3) 0;
+    }
+
+    .expenses-section .section-header .btn-success {
+        padding: 0.625rem var(--space-4);
+    }
+}

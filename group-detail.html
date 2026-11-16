@@ -68,9 +68,22 @@
 
         <!-- Expenses Section -->
         <section class="expenses-section">
-            <div class="section-header">
+            <div class="section-header expenses-toolbar">
                 <button class="btn-success" onclick="showAddExpenseModal()">Add Expense</button>
                 <button class="btn-success hide-on-mobile" onclick="showDetailsView()">Show details</button>
+            </div>
+            <div id="expenseFilters" class="expense-filters" style="display: none;">
+                <div class="expense-filter-row">
+                    <input type="search" id="expenseSearchInput" class="expense-filter-search" placeholder="Search expenses" autocomplete="off" aria-label="Search expenses, people or category" oninput="onExpenseFilterChange()">
+                    <button type="button" id="expenseFilterToggle" class="expense-filter-toggle" aria-expanded="false" aria-controls="expenseFilterPanel" onclick="toggleExpenseFilterPanel()">Filters<span id="expenseFilterBadge" class="expense-filter-badge" style="display:none"></span></button>
+                </div>
+                <div id="expenseFilterPanel" class="expense-filter-panel">
+                    <select id="expensePayerFilter" class="expense-filter-select" aria-label="Filter by who paid" onchange="onExpenseFilterChange()">
+                        <option value="">Paid by: anyone</option>
+                    </select>
+                    <div id="expenseCategoryChips" class="expense-chips" role="group" aria-label="Filter by category"></div>
+                </div>
+                <div id="expenseFilterSummary" class="expense-filter-summary" aria-live="polite"></div>
             </div>
             <div id="expensesList" class="expenses-list">
                 <!-- Expenses will be loaded here -->
@@ -81,6 +94,11 @@
                 <button class="btn-success btn-large" onclick="showAddExpenseModal()">Add First Expense</button>
             </div>
         </section>
+
+        <!-- Floating add button (phones only; laptops use the Add Expense button above) -->
+        <button type="button" class="expense-fab" onclick="showAddExpenseModal()" aria-label="Add expense" title="Add expense">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
 
         <!-- Balances Section -->
         <section class="balances-section">
@@ -1569,6 +1587,8 @@
 
             if (!currentGroup || !currentGroup.expenses || currentGroup.expenses.length === 0) {
                 console.log('📭 No expenses to display');
+                const filterBar = document.getElementById('expenseFilters');
+                if (filterBar) filterBar.style.display = 'none';
                 if (expensesList) expensesList.style.display = 'none';
                 if (noExpenses) noExpenses.style.display = 'block';
                 return;
@@ -1585,6 +1605,11 @@
 
             // Get only participants (names), not member IDs
             const participants = Array.isArray(currentGroup.participants) ? currentGroup.participants : [];
+
+            // View-only filters (search, who paid, category). Balances always use every expense.
+            refreshExpenseFilterControls();
+            const visibleExpenses = getVisibleExpenses();
+            renderExpenseFilterSummary(visibleExpenses);
             
             // Helper function to filter out IDs and keep only participant names
             const filterToParticipants = (value) => {
@@ -1605,8 +1630,10 @@
                 return null;
             };
 
-            if (expensesList) {
-                expensesList.innerHTML = currentGroup.expenses.map((expense, index) => {
+            if (expensesList && visibleExpenses.length === 0) {
+                expensesList.innerHTML = '<div class="expense-filter-empty"><p>No expenses match these filters.</p><button type="button" class="btn-secondary" onclick="clearExpenseFilters()">Clear filters</button></div>';
+            } else if (expensesList) {
+                expensesList.innerHTML = visibleExpenses.map((expense, index) => {
                     console.log(`Expense ${index + 1}:`, expense.name, '-', formatCurrency(expense.amount));
                     const paidBy = filterToParticipants(expense.paidBy) || 'Unknown';
                     const splitBetween = filterToParticipants(expense.splitBetween || []);
@@ -1642,7 +1669,7 @@
                             <div class="expense-content">
                                 <h4>${expense.name}</h4>
                                 <div class="expense-amount">${formatCurrency(expense.amount)}</div>
-                                <div class="expense-meta">Paid by ${paidBy} • ${splitLabel} ${splitBetweenText}</div>
+                                <div class="expense-meta"><span class="expense-meta-text">Paid by ${paidBy} • ${splitLabel} ${splitBetweenText}${perPersonAmount ? `<span class="expense-meta-each"> • ${formatCurrency(perPersonAmount)} each</span>` : ''}</span></div>
                                 ${perPersonHtml}
                             </div>
                             <div class="expense-actions">
@@ -1660,29 +1687,146 @@
         // Store original expenses for filtering
         let allExpenses = [];
 
-        function filterExpenses() {
-            const searchInput = document.getElementById('expenseSearchInput');
-            const searchTerm = (searchInput?.value || '').toLowerCase().trim();
-            
-            if (!currentGroup || !currentGroup.expenses) return;
-            
-            // Restore from allExpenses if needed
-            if (allExpenses.length === 0) {
-                allExpenses = [...currentGroup.expenses];
+        // ---- Expense filters (view only: currentGroup.expenses and balances are never changed) ----
+        const expenseFilters = { q: '', payer: '', cat: '' };
+
+        // Groups have no stored category, so one is worked out from the expense name.
+        // Order matters: the first match wins.
+        const EXPENSE_CATEGORIES = [
+            { key: 'food', label: 'Food', re: /\b(soup|oota|mess|bakery|food|snacks?|chips|lunch|dinner|breakfast|tiffin|meals?|tea|coffee|juice|water|biscuits?|cake|ice ?cream|restaurant|dhaba|biryani|dosa|idli|pizza|burger|sweets?|chocolates?|fruits?|bottle)\b/i },
+            { key: 'stay', label: 'Stay', re: /\b(hotel|room|rooms|stay|lodge|lodging|resort|homestay|dorm|dormitory|accommodation|check ?-?in|airbnb)\b/i },
+            { key: 'travel', label: 'Travel', re: /\b(bus|train|taxi|cab|auto|uber|ola|rapido|fuel|petrol|diesel|toll|parking|flight|metro|ride|travel|transport|booking)\b/i },
+            { key: 'temple', label: 'Temple & pooja', re: /\b(temple|deepa|deepam|diya|pooja|puja|darshana?|darshanam|abhishekam?|archana|prasad(am)?|camphor|flowers?|garland|coconut|donation|hundi|guide|girivalam)\b/i },
+            { key: 'fun', label: 'Entertainment', re: /\b(movies?|cinema|films?|theatre|theater|boating|games?|gaming|bowling|amusement|park entry)\b/i },
+            { key: 'shopping', label: 'Shopping', re: /\b(shopping|gifts?|souvenirs?|clothes|bag|buy|bought|market)\b/i }
+        ];
+        const EXPENSE_CATEGORY_OTHER = { key: 'other', label: 'Other' };
+
+        function expenseCategoryOf(expense) {
+            const name = String((expense && expense.name) || '');
+            for (let i = 0; i < EXPENSE_CATEGORIES.length; i++) {
+                if (EXPENSE_CATEGORIES[i].re.test(name)) return EXPENSE_CATEGORIES[i];
             }
-            
-            if (!searchTerm) {
-                currentGroup.expenses = [...allExpenses];
-            } else {
-                currentGroup.expenses = allExpenses.filter(expense => 
-                    expense.name.toLowerCase().includes(searchTerm) ||
-                    expense.paidBy.toLowerCase().includes(searchTerm) ||
-                    (expense.splitBetween && expense.splitBetween.some(member => member.toLowerCase().includes(searchTerm)))
-                );
+            return EXPENSE_CATEGORY_OTHER;
+        }
+
+        function expenseMatchesFilters(expense, skip) {
+            skip = skip || '';
+            if (skip !== 'payer' && expenseFilters.payer && expense.paidBy !== expenseFilters.payer) return false;
+            if (skip !== 'cat' && expenseFilters.cat && expenseCategoryOf(expense).key !== expenseFilters.cat) return false;
+            const q = expenseFilters.q.toLowerCase().trim();
+            if (q) {
+                const haystack = [
+                    expense.name,
+                    expense.paidBy,
+                    expenseCategoryOf(expense).label,
+                    (expense.splitBetween || []).join(' ')
+                ].join(' ').toLowerCase();
+                if (!q.split(/\s+/).every(function (word) { return haystack.indexOf(word) >= 0; })) return false;
             }
-            
+            return true;
+        }
+
+        function getVisibleExpenses() {
+            const all = (currentGroup && currentGroup.expenses) || [];
+            return all.filter(function (expense) { return expenseMatchesFilters(expense); });
+        }
+
+        function safeText(value) {
+            return (typeof escapeHtml === 'function') ? escapeHtml(String(value)) : String(value);
+        }
+
+        // Rebuilds the "paid by" list and the category chips. Counts follow the other active filters.
+        function refreshExpenseFilterControls() {
+            const bar = document.getElementById('expenseFilters');
+            const select = document.getElementById('expensePayerFilter');
+            const chips = document.getElementById('expenseCategoryChips');
+            const all = (currentGroup && currentGroup.expenses) || [];
+            if (!bar || !select || !chips) return;
+            bar.style.display = all.length ? '' : 'none'; // '' lets the stylesheet choose block (phone) or grid (laptop)
+
+            const participants = Array.isArray(currentGroup && currentGroup.participants) ? currentGroup.participants : [];
+            const payers = [];
+            all.forEach(function (expense) {
+                if (participants.includes(expense.paidBy) && payers.indexOf(expense.paidBy) < 0) payers.push(expense.paidBy);
+            });
+            if (expenseFilters.payer && payers.indexOf(expenseFilters.payer) < 0) expenseFilters.payer = '';
+            select.innerHTML = '<option value="">Paid by: anyone</option>' + payers.map(function (name) {
+                const count = all.filter(function (e) { return e.paidBy === name && expenseMatchesFilters(e, 'payer'); }).length;
+                return '<option value="' + safeText(name) + '">' + safeText(name) + ' (' + count + ')</option>';
+            }).join('');
+            select.value = expenseFilters.payer;
+
+            const counts = {};
+            all.forEach(function (expense) {
+                if (!expenseMatchesFilters(expense, 'cat')) return;
+                const key = expenseCategoryOf(expense).key;
+                counts[key] = (counts[key] || 0) + 1;
+            });
+            const cats = EXPENSE_CATEGORIES.concat([EXPENSE_CATEGORY_OTHER]);
+            if (expenseFilters.cat && !cats.some(function (c) { return c.key === expenseFilters.cat; })) expenseFilters.cat = '';
+            const badge = document.getElementById('expenseFilterBadge');
+            if (badge) {
+                const activeCount = (expenseFilters.payer ? 1 : 0) + (expenseFilters.cat ? 1 : 0);
+                badge.textContent = String(activeCount);
+                badge.style.display = activeCount ? 'inline-flex' : 'none';
+            }
+            const total = Object.keys(counts).reduce(function (sum, key) { return sum + counts[key]; }, 0);
+            const chip = function (key, label, count) {
+                const active = expenseFilters.cat === key;
+                return '<button type="button" class="expense-chip' + (active ? ' active' : '') + '" aria-pressed="' + active +
+                    '" onclick="setExpenseCategory(\'' + key + '\')">' + safeText(label) + ' <span>' + count + '</span></button>';
+            };
+            chips.innerHTML = chip('', 'All', total) + cats.filter(function (c) {
+                return counts[c.key] || expenseFilters.cat === c.key;
+            }).map(function (c) { return chip(c.key, c.label, counts[c.key] || 0); }).join('');
+        }
+
+        function renderExpenseFilterSummary(visible) {
+            const el = document.getElementById('expenseFilterSummary');
+            if (!el || !currentGroup) return;
+            const all = currentGroup.expenses || [];
+            const active = !!(expenseFilters.q.trim() || expenseFilters.payer || expenseFilters.cat);
+            if (!active) { el.innerHTML = ''; return; }
+            const sum = visible.reduce(function (s, e) { return s + (parseFloat(e.amount) || 0); }, 0);
+            el.innerHTML = '<span>Showing ' + visible.length + ' of ' + all.length + ' expenses &bull; ' + formatCurrency(sum) +
+                '</span> <button type="button" class="expense-filter-clear" onclick="clearExpenseFilters()">Clear</button>';
+        }
+
+        // On phones the payer list and chips are tucked away until you tap "Filters".
+        function toggleExpenseFilterPanel() {
+            const bar = document.getElementById('expenseFilters');
+            const button = document.getElementById('expenseFilterToggle');
+            if (!bar) return;
+            const open = bar.classList.toggle('open');
+            if (button) button.setAttribute('aria-expanded', String(open));
+        }
+
+        function onExpenseFilterChange() {
+            const input = document.getElementById('expenseSearchInput');
+            const select = document.getElementById('expensePayerFilter');
+            expenseFilters.q = input ? input.value : '';
+            expenseFilters.payer = select ? select.value : '';
             displayExpenses();
-            calculateBalances();
+        }
+
+        function setExpenseCategory(key) {
+            expenseFilters.cat = (expenseFilters.cat === key) ? '' : key;
+            displayExpenses();
+        }
+
+        function clearExpenseFilters() {
+            expenseFilters.q = '';
+            expenseFilters.payer = '';
+            expenseFilters.cat = '';
+            const input = document.getElementById('expenseSearchInput');
+            if (input) input.value = '';
+            displayExpenses();
+        }
+
+        // Kept so older callers keep working. Filtering no longer touches the expense data.
+        function filterExpenses() {
+            onExpenseFilterChange();
         }
 
         // FIXED: Enhanced Settlement System
