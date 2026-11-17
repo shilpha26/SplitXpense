@@ -182,14 +182,18 @@
                         <option value="">Select who paid</option>
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="whwOpenGroup">
+                    <button type="button" class="btn-secondary whw-open" onclick="openWhoHadWhat('add')">Who had what? Split by items</button>
+                </div>
+                <div class="form-group" id="whwAppliedGroup" style="display: none;"></div>
+                <div class="form-group" id="expenseSplitTypeGroup">
                     <label for="expenseSplitType">Split Type</label>
                     <select id="expenseSplitType" onchange="handleSplitTypeChange()">
                         <option value="equal">Equal Split</option>
                         <option value="custom">Custom Amounts</option>
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="expenseSplitPeopleGroup">
                     <label>Split Between</label>
                     <div class="selection-container">
                         <div class="selection-header">
@@ -246,14 +250,18 @@
                         <option value="">Select who paid</option>
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="editWhwOpenGroup">
+                    <button type="button" class="btn-secondary whw-open" onclick="openWhoHadWhat('edit')">Who had what? Split by items</button>
+                </div>
+                <div class="form-group" id="editWhwAppliedGroup" style="display: none;"></div>
+                <div class="form-group" id="editExpenseSplitTypeGroup">
                     <label for="editExpenseSplitType">Split Type</label>
                     <select id="editExpenseSplitType" onchange="handleEditSplitTypeChange()">
                         <option value="equal">Equal Split</option>
                         <option value="custom">Custom Split</option>
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="editExpenseSplitPeopleGroup">
                     <label>Split Between</label>
                     <div class="selection-container">
                         <div class="selection-header">
@@ -282,6 +290,56 @@
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeEditExpenseModal()">Cancel</button>
                 <button type="button" class="btn-success" onclick="saveExpenseChanges()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Who had what: split one bill by items (kept after the Add and Edit modals so it opens on top of both) -->
+    <div id="whoHadWhatModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Who had what</h3>
+                <span class="close" onclick="closeWhoHadWhat()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="whw-scan">
+                    <button type="button" class="btn-secondary whw-scan-btn" id="whwScanBtn" onclick="document.getElementById('whwScanInput').click()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                        Scan bill
+                    </button>
+                    <input type="file" id="whwScanInput" accept="image/*" hidden onchange="whwScanFile(this)">
+                    <div id="whwScanStatus" class="whw-scan-status" aria-live="polite"></div>
+                    <details id="whwScanRaw" class="whw-scan-raw" hidden>
+                        <summary>What the scanner read</summary>
+                        <pre id="whwScanRawText"></pre>
+                    </details>
+                </div>
+                <p class="whw-hint">Scan a photo of the bill, or type the items in. Then tap who had each one. Tax and service charge are shared equally between everyone who had something. Photos are read on your device and are never uploaded.</p>
+                <div id="whwItems" class="whw-items"></div>
+                <button type="button" class="btn-secondary whw-add" onclick="addWhwItem()">+ Add item</button>
+                <div class="form-group whw-total">
+                    <label for="whwTotal">Bill total as printed (with tax and charges)</label>
+                    <input type="number" id="whwTotal" inputmode="decimal" placeholder="Leave empty if there is no tax" step="0.01" min="0" oninput="whw.total = this.value; updateWhwSummary()">
+                </div>
+                <div id="whwSummary" class="whw-summary" aria-live="polite"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeWhoHadWhat()">Back</button>
+                <button type="button" class="btn-success" id="whwApplyBtn" onclick="applyWhoHadWhat()" disabled>Use these amounts</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Who had what: read-only view of a saved bill, for everyone in the group -->
+    <div id="billItemsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="billItemsTitle">Who had what</h3>
+                <span class="close" onclick="closeBillItems()">&times;</span>
+            </div>
+            <div class="modal-body" id="billItemsBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeBillItems()">Close</button>
             </div>
         </div>
     </div>
@@ -373,6 +431,10 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="js/shared-utils.js"></script>
+    <script src="js/dom-utils.js"></script>
+    <script src="js/modal-utils.js"></script>
+    <script src="js/bill-scanner.js"></script>
+    <script src="js/bill-items.js"></script>
     <script>
         // ========================================
         // GLOBAL VARIABLES
@@ -1098,6 +1160,7 @@
                                     perPersonAmount: exp[expenseSchema.perPersonAmount] || exp.per_person_amount || 0,
                                     splitType: exp[expenseSchema.splitType] || exp.split_type || 'equal',
                                     customAmounts: exp[expenseSchema.customAmounts] || exp.custom_amounts || null,
+                                    billItems: exp[expenseSchema.billItems || 'bill_items'] || exp.bill_items || null,
                                     supabaseId: exp[expenseSchema.id] || exp.id
                                 })),
                                 totalExpenses: 0,
@@ -1663,6 +1726,13 @@
                     }
                     
                     const splitLabel = isCustomSplit ? 'Custom split between' : 'Split between';
+                    // Saved "who had what" details, viewable by everyone in the group
+                    const hasBillItems = !!(window.BillItems && window.BillItems.normalize(expense.billItems));
+                    if (hasBillItems) {
+                        // Takes the spot of the "₹x each" line (custom splits have no single per-person amount),
+                        // so it sits next to the edit and delete buttons.
+                        perPersonHtml = `<div class="per-person-amount"><button type="button" class="expense-items-link" onclick="showBillItems('${expense.id}')">Who had what</button></div>`;
+                    }
                     
                     return `
                         <div class="expense-item">
@@ -1962,6 +2032,8 @@
         // ADD EXPENSE FUNCTIONS - FIXED
         // ========================================
         function showAddExpenseModal() {
+            pendingBillItems = null;
+            if (typeof updateWhwApplied === 'function') { whwManual = false; updateWhwApplied('add'); }
             const modal = document.getElementById('addExpenseModal');
             const paidBySelect = document.getElementById('expensePaidBy');
             const splitGrid = document.getElementById('expenseSplitGrid');
@@ -2147,7 +2219,7 @@
 
         // Update custom amounts total
         function updateCustomAmountsTotal() {
-            const customInputs = document.querySelectorAll('.custom-amount-input');
+            const customInputs = document.querySelectorAll('#customAmountsList .custom-amount-input');
             let total = 0;
             customInputs.forEach(input => {
                 total += parseFloat(input.value || 0);
@@ -2182,6 +2254,7 @@
             if (splitTypeSelect) splitTypeSelect.value = 'equal';
             const customContainer = document.getElementById('customAmountsContainer');
             if (customContainer) customContainer.style.display = 'none';
+            if (typeof resetWhoHadWhat === 'function') resetWhoHadWhat();
         }
 
         function selectAllExpenseMembers() {
@@ -2194,6 +2267,501 @@
             document.querySelectorAll('#expenseSplitGrid .selectable-box').forEach(box => {
                 box.classList.remove('selected');
             });
+        }
+
+        // ========================================
+        // WHO HAD WHAT: split one bill by items
+        // ========================================
+        // Money is handled in whole paise so every share is exact and the shares always add up to the bill.
+        // `target` is the form the result is written to: 'add' (Add Expense) or 'edit' (Edit Expense).
+        const whw = { items: [], total: '', nextId: 1, people: [], target: 'add' };
+        let whwScanning = false;
+        // The breakdown made on the split screen. It is saved with the expense, but only if the amounts in the
+        // form still match it when the expense is saved (see BillItems.matches).
+        let pendingBillItems = null;
+        // True after "Enter amounts manually": the per-person amount boxes are shown instead of the item summary
+        let whwManual = false;
+
+        function whwEsc(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function whwToPaise(value) {
+            const n = parseFloat(value);
+            return isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
+        }
+
+        function whwMoney(paise) {
+            return formatCurrency(paise / 100);
+        }
+
+        // Splits `amount` (whole paise, may be negative) in proportion to `weights`.
+        // The parts always add up to `amount` exactly (largest remainder).
+        function whwAllocate(amount, weights) {
+            const sign = amount < 0 ? -1 : 1;
+            const abs = Math.abs(amount);
+            const sum = weights.reduce(function (a, b) { return a + b; }, 0);
+            if (!abs || !sum) return weights.map(function () { return 0; });
+            const raw = weights.map(function (w) { return abs * w / sum; });
+            const parts = raw.map(Math.floor);
+            let left = abs - parts.reduce(function (a, b) { return a + b; }, 0);
+            const order = raw.map(function (r, i) { return { i: i, frac: r - Math.floor(r) }; })
+                .sort(function (a, b) { return b.frac - a.frac || a.i - b.i; });
+            for (let k = 0; left > 0 && k < order.length; k++, left--) parts[order[k].i] += 1;
+            return parts.map(function (p) { return p * sign; });
+        }
+
+        function whwCompute() {
+            const people = whw.people;
+            const subtotal = people.map(function () { return 0; });
+            const unassigned = [];
+            let itemsSum = 0;
+
+            whw.items.forEach(function (item, index) {
+                const cents = whwToPaise(item.amount);
+                if (!cents) return;
+                itemsSum += cents;
+                const who = people.map(function (_, i) { return i; }).filter(function (i) { return item.members.has(i); });
+                if (!who.length) { unassigned.push(item); return; }
+                const base = Math.floor(cents / who.length);
+                const rest = cents - base * who.length;
+                who.forEach(function (personIndex, k) {
+                    // Rotate who gets the odd paise so nobody always pays the extra one
+                    subtotal[personIndex] += base + (((k + index) % who.length) < rest ? 1 : 0);
+                });
+            });
+
+            const printed = whwToPaise(whw.total);
+            const total = printed || itemsSum;
+            const extra = total - itemsSum; // tax, service charge, round-off (+) or discount (-)
+            // Tax and charges are shared equally between everyone who had something. A discount is shared in
+            // proportion to what each person had, so nobody can end up with a negative amount.
+            const extraWeights = extra > 0 ? subtotal.map(function (s) { return s > 0 ? 1 : 0; }) : subtotal;
+            const extraShare = whwAllocate(extra, extraWeights);
+            const rows = people.map(function (name, i) {
+                return { name: name, items: subtotal[i], extra: extraShare[i], total: subtotal[i] + extraShare[i] };
+            }).filter(function (row) { return row.items > 0; });
+            const sum = rows.reduce(function (a, row) { return a + row.total; }, 0);
+
+            return {
+                rows: rows, itemsSum: itemsSum, total: total, extra: extra, unassigned: unassigned, sum: sum, printed: printed,
+                ready: itemsSum > 0 && total > 0 && total <= 1000000000 && !unassigned.length && rows.length > 0 && sum === total
+            };
+        }
+
+        function openWhoHadWhat(target) {
+            const modal = document.getElementById('whoHadWhatModal');
+            if (!modal || !currentGroup) return;
+            whw.target = target === 'edit' ? 'edit' : 'add';
+            whwSetScanStatus('', '');
+            const participants = Array.isArray(currentGroup.participants) ? currentGroup.participants : [];
+            const people = participants.filter(function (name) {
+                return typeof name === 'string' && name &&
+                    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name) &&
+                    !/^user\d+$/i.test(name) && !/^[a-zA-Z]+\d+$/.test(name);
+            });
+            if (people.join('|') !== whw.people.join('|')) {
+                // The group changed since last time, so earlier choices no longer line up
+                whw.items = [];
+            }
+            whw.people = people;
+            // Editing a bill that was split by items: start from the saved items instead of a blank list
+            if (whw.target === 'edit' && !pendingBillItems && !whw.items.some(function (item) { return item.name || item.amount; })) {
+                const saved = whwEditingDetails();
+                if (saved) whwLoadDetails(saved);
+            }
+            if (!whw.items.length) addWhwItem(true);
+            const totalInput = document.getElementById('whwTotal');
+            if (totalInput) totalInput.value = whw.total;
+            renderWhwItems();
+            modal.style.display = 'block';
+        }
+
+        function closeWhoHadWhat() {
+            const modal = document.getElementById('whoHadWhatModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        function resetWhoHadWhat() {
+            whw.items = [];
+            whw.total = '';
+            whw.nextId = 1;
+            pendingBillItems = null;
+            whwManual = false;
+            const totalInput = document.getElementById('whwTotal');
+            if (totalInput) totalInput.value = '';
+            whwSetScanStatus('', '');
+            closeWhoHadWhat();
+            updateWhwApplied('add');
+            updateWhwApplied('edit');
+        }
+
+        // The saved breakdown of the expense being edited, if it still matches that expense
+        function whwEditingDetails() {
+            if (!window.BillItems || !editingExpenseId || !currentGroup) return null;
+            const expense = (currentGroup.expenses || []).find(function (e) { return e.id === editingExpenseId; });
+            if (!expense || expense.splitType !== 'custom') return null;
+            const details = window.BillItems.normalize(expense.billItems);
+            return details && window.BillItems.matches(details, expense.amount, expense.customAmounts) ? details : null;
+        }
+
+        function whwLoadDetails(details) {
+            whw.items = details.items.map(function (item) {
+                const members = new Set();
+                item.who.forEach(function (name) {
+                    const index = whw.people.indexOf(name);
+                    if (index >= 0) members.add(index);
+                });
+                return { id: whw.nextId++, name: item.name, amount: item.amount.toFixed(2), members: members };
+            });
+            whw.total = details.total.toFixed(2);
+        }
+
+        // Once the amounts come from "Who had what", the split type, member picker and per-person amount boxes are
+        // not needed. Show a short summary with a way back into the items instead.
+        function updateWhwApplied(target) {
+            const edit = target === 'edit';
+            const ids = edit
+                ? { open: 'editWhwOpenGroup', applied: 'editWhwAppliedGroup', type: 'editExpenseSplitTypeGroup', people: 'editExpenseSplitPeopleGroup', amount: 'editExpenseAmount' }
+                : { open: 'whwOpenGroup', applied: 'whwAppliedGroup', type: 'expenseSplitTypeGroup', people: 'expenseSplitPeopleGroup', amount: 'expenseAmount' };
+            const el = function (key) { return document.getElementById(ids[key]); };
+            const box = el('applied');
+            if (!box) return;
+
+            let details = null;
+            if (window.BillItems && !whwManual) {
+                details = pendingBillItems ? window.BillItems.normalize(pendingBillItems) : (edit ? whwEditingDetails() : null);
+            }
+
+            const amountInput = el('amount');
+            if (amountInput) amountInput.readOnly = !!details;
+            if (el('open')) el('open').style.display = details ? 'none' : '';
+            if (el('type')) el('type').style.display = details ? 'none' : '';
+            if (el('people')) el('people').style.display = details ? 'none' : '';
+            box.style.display = details ? '' : 'none';
+
+            if (!details) {
+                box.innerHTML = '';
+                return;
+            }
+            const rows = details.people.map(function (p) {
+                return '<div class="whw-applied-row"><span>' + whwEsc(p.name) + '</span><strong>' + whwMoney(Math.round(p.total * 100)) + '</strong></div>';
+            }).join('');
+            box.innerHTML =
+                '<div class="whw-applied">' +
+                '<div class="whw-applied-title">Split by items <span>' + details.items.length + (details.items.length === 1 ? ' item' : ' items') + '</span></div>' +
+                rows +
+                '<div class="whw-applied-actions">' +
+                '<button type="button" class="btn-secondary" onclick="openWhoHadWhat(\'' + (edit ? 'edit' : 'add') + '\')">Edit items</button>' +
+                '<button type="button" class="whw-applied-link" onclick="whwEnterManually(\'' + (edit ? 'edit' : 'add') + '\')">Enter amounts manually</button>' +
+                '</div></div>';
+        }
+
+        function whwEnterManually(target) {
+            whwManual = true;
+            pendingBillItems = null;
+            updateWhwApplied(target);
+        }
+
+        function addWhwItem(silent) {
+            whw.items.push({ id: whw.nextId++, name: '', amount: '', members: new Set() });
+            if (silent) return;
+            renderWhwItems();
+            const names = document.querySelectorAll('#whwItems .whw-name');
+            if (names.length) names[names.length - 1].focus();
+        }
+
+        function removeWhwItem(id) {
+            whw.items = whw.items.filter(function (item) { return item.id !== id; });
+            if (!whw.items.length) addWhwItem(true);
+            renderWhwItems();
+        }
+
+        function whwSetField(id, field, value) {
+            const item = whw.items.find(function (i) { return i.id === id; });
+            if (!item) return;
+            item[field] = value;
+            updateWhwSummary();
+        }
+
+        function whwAmountKey(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                addWhwItem();
+            }
+        }
+
+        function toggleWhwMember(id, index, button) {
+            const item = whw.items.find(function (i) { return i.id === id; });
+            if (!item) return;
+            if (item.members.has(index)) item.members.delete(index); else item.members.add(index);
+            if (button) {
+                button.classList.toggle('selected', item.members.has(index));
+                button.setAttribute('aria-pressed', String(item.members.has(index)));
+            }
+            updateWhwSummary();
+        }
+
+        function whwSelectAll(id) {
+            const item = whw.items.find(function (i) { return i.id === id; });
+            if (!item) return;
+            if (item.members.size === whw.people.length) item.members.clear();
+            else whw.people.forEach(function (_, i) { item.members.add(i); });
+            renderWhwItems();
+        }
+
+        function renderWhwItems() {
+            const list = document.getElementById('whwItems');
+            if (!list) return;
+            list.innerHTML = whw.items.map(function (item) {
+                const chips = whw.people.map(function (name, i) {
+                    const on = item.members.has(i);
+                    return '<button type="button" class="whw-chip' + (on ? ' selected' : '') + '" aria-pressed="' + on +
+                        '" onclick="toggleWhwMember(' + item.id + ', ' + i + ', this)">' + whwEsc(name) + '</button>';
+                }).join('');
+                return '<div class="whw-item">' +
+                    '<div class="whw-item-row">' +
+                    '<input type="text" class="whw-name" placeholder="Item, e.g. Paneer Tikka" maxlength="60" aria-label="Item name" value="' + whwEsc(item.name) +
+                    '" oninput="whwSetField(' + item.id + ', \'name\', this.value)">' +
+                    '<input type="number" class="whw-amount" inputmode="decimal" placeholder="&#8377;" step="0.01" min="0" aria-label="Item price" value="' + whwEsc(item.amount) +
+                    '" oninput="whwSetField(' + item.id + ', \'amount\', this.value)" onkeydown="whwAmountKey(event)">' +
+                    '<button type="button" class="whw-remove" aria-label="Remove item" onclick="removeWhwItem(' + item.id + ')">&times;</button>' +
+                    '</div>' +
+                    '<div class="whw-chips">' + chips +
+                    '<button type="button" class="whw-chip-all" onclick="whwSelectAll(' + item.id + ')">All</button></div>' +
+                    '</div>';
+            }).join('');
+            updateWhwSummary();
+        }
+
+        function updateWhwSummary() {
+            const box = document.getElementById('whwSummary');
+            const apply = document.getElementById('whwApplyBtn');
+            if (!box) return;
+            const r = whwCompute();
+            const html = [];
+
+            if (r.itemsSum > 0) {
+                html.push('<div class="whw-line"><span>Items total</span><span>' + whwMoney(r.itemsSum) + '</span></div>');
+                if (!r.printed) {
+                    html.push('<div class="whw-note">Enter the bill total above to include tax and service charge.</div>');
+                } else if (r.extra > 0) {
+                    const pct = Math.round(r.extra * 1000 / r.itemsSum) / 10;
+                    html.push('<div class="whw-line"><span>Tax and charges, shared equally</span><span>+' + whwMoney(r.extra) + ' (' + pct + '%)</span></div>');
+                    if (pct > 40) html.push('<div class="whw-warn">That is a large add-on. Check the bill total.</div>');
+                } else if (r.extra < 0) {
+                    html.push('<div class="whw-line"><span>Discount</span><span>-' + whwMoney(-r.extra) + '</span></div>');
+                    if (-r.extra * 100 > r.itemsSum * 40) html.push('<div class="whw-warn">The items add up to much more than the bill total. Check the prices.</div>');
+                } else {
+                    html.push('<div class="whw-line"><span>Tax and charges</span><span>none</span></div>');
+                }
+            }
+
+            if (r.rows.length) {
+                html.push('<div class="whw-people">' + r.rows.map(function (row) {
+                    const detail = row.extra
+                        ? whwMoney(row.items) + (row.extra > 0 ? ' + ' : ' - ') + whwMoney(Math.abs(row.extra))
+                        : whwMoney(row.items);
+                    return '<div class="whw-person"><span class="whw-person-name">' + whwEsc(row.name) +
+                        '<small>' + detail + '</small></span><strong>' + whwMoney(row.total) + '</strong></div>';
+                }).join('') + '</div>');
+            }
+
+            if (r.unassigned.length) {
+                const names = r.unassigned.map(function (item) { return whwEsc(item.name || 'Unnamed item'); }).join(', ');
+                html.push('<div class="whw-warn">Nobody is selected for: ' + names + '</div>');
+            } else if (r.ready) {
+                html.push('<div class="whw-ok">Adds up to the bill total, ' + whwMoney(r.total) + '</div>');
+            } else if (r.itemsSum === 0) {
+                html.push('<div class="whw-note">Add at least one item with a price.</div>');
+            }
+
+            box.innerHTML = html.join('');
+            if (apply) apply.disabled = !r.ready;
+        }
+
+        // Fills the Add Expense or Edit Expense form with the total and each person's exact amount.
+        function applyWhoHadWhat() {
+            const r = whwCompute();
+            if (!r.ready) return;
+
+            const edit = whw.target === 'edit';
+
+            // Keep the breakdown so it can be saved with the expense and viewed by the whole group later
+            pendingBillItems = window.BillItems ? window.BillItems.build({
+                items: whw.items.map(function (item) {
+                    return {
+                        name: item.name.trim() || 'Item',
+                        amount: whwToPaise(item.amount),
+                        who: whw.people.filter(function (_, index) { return item.members.has(index); })
+                    };
+                }).filter(function (item) { return item.amount > 0; }),
+                rows: r.rows, total: r.total, itemsTotal: r.itemsSum, extra: r.extra
+            }) : null;
+
+            const amountInput = document.getElementById(edit ? 'editExpenseAmount' : 'expenseAmount');
+            const descriptionInput = document.getElementById(edit ? 'editExpenseDescription' : 'expenseDescription');
+            const splitType = document.getElementById(edit ? 'editExpenseSplitType' : 'expenseSplitType');
+            const splitGrid = edit ? '#editExpenseSplitGrid' : '#expenseSplitGrid';
+            const customInputs = edit ? '#editCustomAmountsList .custom-amount-input' : '#customAmountsList .custom-amount-input';
+            if (!amountInput || !splitType) return;
+
+            amountInput.value = (r.total / 100).toFixed(2);
+            if (typeof validateExpenseAmount === 'function') validateExpenseAmount(amountInput);
+            if (descriptionInput && !descriptionInput.value.trim()) descriptionInput.value = 'Bill split by items';
+
+            const shareByName = {};
+            r.rows.forEach(function (row) { shareByName[row.name] = row.total; });
+            document.querySelectorAll(splitGrid + ' .selectable-box').forEach(function (box) {
+                box.classList.toggle('selected', shareByName[box.dataset.member] !== undefined);
+            });
+
+            splitType.value = 'custom';
+            if (edit) handleEditSplitTypeChange(); else handleSplitTypeChange();
+            document.querySelectorAll(customInputs).forEach(function (input) {
+                const paise = shareByName[input.dataset.member];
+                input.value = ((paise || 0) / 100).toFixed(2);
+            });
+            if (edit) updateEditCustomAmountsTotal(); else updateCustomAmountsTotal();
+
+            whwManual = false;
+            updateWhwApplied(whw.target);
+            closeWhoHadWhat();
+            showNotification(edit
+                ? 'Amounts filled in. Tap Save Changes to keep them.'
+                : 'Amounts filled in. Choose who paid, then tap Add Expense.', 'success');
+        }
+
+        // The split itself always works. Only the shareable item list needs the optional database column,
+        // so say so when it could not be stored instead of failing silently.
+        function warnIfBillItemsNotStored(hadDetails) {
+            const sync = window.splitEasySync;
+            if (!hadDetails || !sync || !sync.schemaChecked || sync.billItemsSupported) return;
+            console.warn('Who had what details were not stored: expenses.bill_items was not found. Run supabase-bill-items.sql, then reload.');
+            showNotification('Saved, but the item list needs a database update to be shared (see supabase-bill-items.sql).', 'info');
+        }
+
+        // ---- View a saved bill (read-only, for everyone in the group) ----
+        function showBillItems(expenseId) {
+            const expense = ((currentGroup && currentGroup.expenses) || []).find(function (e) { return String(e.id) === String(expenseId); });
+            const details = expense && window.BillItems ? window.BillItems.normalize(expense.billItems) : null;
+            const body = document.getElementById('billItemsBody');
+            const modal = document.getElementById('billItemsModal');
+            if (!details || !body || !modal) {
+                showNotification('No item details were saved for this expense.', 'info');
+                return;
+            }
+
+            const title = document.getElementById('billItemsTitle');
+            if (title) title.textContent = expense.name || 'Who had what';
+
+            const items = details.items.map(function (item) {
+                return '<div class="bi-item"><div class="bi-row"><span class="bi-name">' + whwEsc(item.name) + '</span>' +
+                    '<span class="bi-amount">' + formatCurrency(item.amount) + '</span></div>' +
+                    '<div class="bi-who">' + (item.who.length ? whwEsc(item.who.join(', ')) : 'Nobody selected') + '</div></div>';
+            }).join('');
+
+            const extraLabel = details.extra > 0 ? 'Tax and charges, shared equally' : 'Discount';
+            const extraLine = details.extra
+                ? '<div class="bi-line"><span>' + extraLabel + '</span><span>' + (details.extra > 0 ? '+' : '-') + formatCurrency(Math.abs(details.extra)) + '</span></div>'
+                : '';
+
+            const people = details.people.map(function (p) {
+                const parts = p.extra
+                    ? formatCurrency(p.items) + (p.extra > 0 ? ' + ' : ' - ') + formatCurrency(Math.abs(p.extra)) + (p.extra > 0 ? ' tax' : ' discount')
+                    : formatCurrency(p.items);
+                return '<div class="bi-person"><span class="bi-person-name">' + whwEsc(p.name) + '<small>' + parts + '</small></span>' +
+                    '<strong>' + formatCurrency(p.total) + '</strong></div>';
+            }).join('');
+
+            body.innerHTML =
+                '<div class="bi-summary">Paid by <strong>' + whwEsc(expense.paidBy || 'Unknown') + '</strong> \u2022 Bill total <strong>' + formatCurrency(details.total) + '</strong></div>' +
+                '<div class="bi-title">Items</div><div class="bi-items">' + items + '</div>' +
+                '<div class="bi-line"><span>Items total</span><span>' + formatCurrency(details.itemsTotal) + '</span></div>' + extraLine +
+                '<div class="bi-title">Each person pays</div><div class="bi-people">' + people + '</div>';
+            modal.style.display = 'block';
+        }
+
+        function closeBillItems() {
+            const modal = document.getElementById('billItemsModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        // ---- Scan bill ----
+        function whwSetScanStatus(message, kind) {
+            const status = document.getElementById('whwScanStatus');
+            if (!status) return;
+            status.textContent = message || '';
+            status.className = 'whw-scan-status' + (kind ? ' ' + kind : '');
+            if (!message) whwShowScanText('');
+        }
+
+        // Shows the raw text the scanner read, so a wrong row can be compared with the paper bill
+        function whwShowScanText(text) {
+            const box = document.getElementById('whwScanRaw');
+            const pre = document.getElementById('whwScanRawText');
+            if (!box || !pre) return;
+            const clean = String(text || '').split(/\r?\n/).map(function (l) { return l.trimEnd(); }).filter(Boolean).join('\n');
+            pre.textContent = clean;
+            box.hidden = !clean;
+            box.open = false;
+        }
+
+        async function whwScanFile(input) {
+            const file = input && input.files && input.files[0];
+            if (input) input.value = '';
+            if (!file || whwScanning) return;
+
+            const button = document.getElementById('whwScanBtn');
+            whwScanning = true;
+            if (button) button.disabled = true;
+            const percent = function (p) { return p > 0 && p < 1 ? ' ' + Math.round(p * 100) + '%' : ''; };
+
+            try {
+                if (!window.BillScanner) throw new Error('The scanner is not available. Reload the page and try again.');
+                const result = await window.BillScanner.scanBill(file, function (s) {
+                    if (s.stage === 'load') whwSetScanStatus('Loading the bill reader' + percent(s.progress) + ' (first time only)', '');
+                    else if (s.stage === 'prepare') whwSetScanStatus('Preparing the photo…', '');
+                    else whwSetScanStatus('Reading the bill' + percent(s.progress) +
+                        (s.attempt > 1 ? ' (checking again, try ' + s.attempt + ' of ' + s.attempts + ')' : '') + '…', '');
+                });
+                whwShowScanText(result.text);
+
+                if (!result.items.length) {
+                    whwSetScanStatus('Could not find any items. Try a flat, well-lit photo with the whole bill in view, or type the items in.', 'error');
+                    return;
+                }
+
+                // Replace the empty starter row; otherwise add to what is already there
+                const onlyEmptyRows = whw.items.every(function (item) { return !item.name.trim() && !item.amount; });
+                if (onlyEmptyRows) whw.items = [];
+                result.items.forEach(function (item) {
+                    whw.items.push({ id: whw.nextId++, name: item.name, amount: String(item.amount), members: new Set() });
+                });
+
+                let totalNote = '';
+                if (result.total && !whw.total) {
+                    whw.total = String(result.total);
+                    const totalInput = document.getElementById('whwTotal');
+                    if (totalInput) totalInput.value = whw.total;
+                    totalNote = ' Bill total ' + whwMoney(Math.round(result.total * 100)) + ' filled in.';
+                } else if (!result.total && !whw.total) {
+                    totalNote = ' Could not find the bill total. Enter it below if the bill has tax.';
+                }
+                renderWhwItems();
+                const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+                whwSetScanStatus('Found ' + result.items.length + ' item' + (result.items.length === 1 ? '' : 's') +
+                    '.' + totalNote + ' Scanning can misread numbers, so check each row, then tap who had it.' +
+                    (warnings.length ? '\n\u26A0 ' + warnings.join('\n\u26A0 ') : ''), warnings.length ? 'warn' : 'ok');
+            } catch (error) {
+                console.error('Bill scan failed:', error);
+                whwSetScanStatus((error && error.message) || 'Could not read that bill. Try again or type the items in.', 'error');
+            } finally {
+                whwScanning = false;
+                if (button) button.disabled = false;
+            }
         }
 
         // FIXED: Critical addExpense function with proper persistence
@@ -2251,7 +2819,8 @@
             let perPersonAmount = parseFloat(amount) / splitBetween.length;
             
             if (splitType === 'custom') {
-                const customInputs = document.querySelectorAll('.custom-amount-input');
+                // Only the Add form's boxes: the Edit form keeps its own (hidden) boxes with the last edited amounts
+                const customInputs = document.querySelectorAll('#customAmountsList .custom-amount-input');
                 let total = 0;
                 let hasInvalidAmount = false;
                 
@@ -2300,7 +2869,10 @@
                 date: new Date().toISOString(),
                 perPersonAmount: perPersonAmount,
                 splitType: splitType,
-                customAmounts: splitType === 'custom' ? customAmounts : undefined
+                customAmounts: splitType === 'custom' ? customAmounts : undefined,
+                // "Who had what" details, only if the amounts still match what was worked out on the split screen
+                billItems: (splitType === 'custom' && window.BillItems && window.BillItems.matches(pendingBillItems, parseFloat(amount), customAmounts))
+                    ? window.BillItems.normalize(pendingBillItems) : undefined
             };
 
             console.log('📝 New expense created:', newExpense);
@@ -2365,6 +2937,7 @@
                 
                 // Reload group from Supabase to ensure sync
                 await loadGroupData(currentGroup.id);
+                warnIfBillItemsNotStored(!!newExpense.billItems);
                 } catch (error) {
                 console.error('Failed to save expense:', error);
                 showNotification('Failed to save expense. Please check your connection.', 'error');
@@ -2379,6 +2952,8 @@
             if (!expense) return;
 
             editingExpenseId = expenseId;
+            pendingBillItems = null;
+            if (typeof resetWhoHadWhat === 'function') resetWhoHadWhat(); // start from this expense, not an earlier one
 
             // Populate form
             const descriptionInput = document.getElementById('editExpenseDescription');
@@ -2451,6 +3026,7 @@
             
             // Handle split type change (this will now properly load custom amounts)
             handleEditSplitTypeChange();
+            updateWhwApplied('edit');
 
             document.getElementById('editExpenseModal').style.display = 'block';
         }
@@ -2550,6 +3126,7 @@
         function closeEditExpenseModal() {
             document.getElementById('editExpenseModal').style.display = 'none';
             editingExpenseId = null;
+            if (typeof resetWhoHadWhat === 'function') resetWhoHadWhat();
         }
 
         function selectAllEditExpenseMembers() {
@@ -2658,6 +3235,14 @@
 
                 // Preserve the expense ID and supabaseId to ensure update, not create
                 const existingExpense = currentGroup.expenses[expenseIndex];
+
+                // Keep the "who had what" details only if they still describe this expense. A new breakdown from the
+                // split screen wins; otherwise the saved one stays, unless the amounts or people were changed.
+                const billItemsCandidate = pendingBillItems || existingExpense.billItems;
+                const keptBillItems = (splitType === 'custom' && window.BillItems && billItemsCandidate &&
+                    window.BillItems.matches(billItemsCandidate, newAmount, customAmounts))
+                    ? window.BillItems.normalize(billItemsCandidate) : null;
+
                 currentGroup.expenses[expenseIndex] = {
                     ...existingExpense,
                     id: existingExpense.id, // Preserve original ID
@@ -2668,7 +3253,8 @@
                     splitBetween: splitBetween,
                     perPersonAmount: perPersonAmount,
                     splitType: splitType,
-                    customAmounts: splitType === 'custom' ? customAmounts : undefined
+                    customAmounts: splitType === 'custom' ? customAmounts : undefined,
+                    billItems: keptBillItems
                 };
 
                 // Update total
@@ -2701,6 +3287,7 @@
 
                 closeEditExpenseModal();
                 showNotification('Expense updated successfully!', 'success');
+                warnIfBillItemsNotStored(!!keptBillItems);
             }
         }
 
@@ -2712,7 +3299,12 @@
                 return;
             }
 
-            if (!confirm(`Are you sure you want to delete the expense "${expense.name}"?`)) return;
+            // Same warning window as deleting a group
+            const message = `Are you sure you want to delete the expense "${expense.name}" (${formatCurrency(expense.amount)})? This action cannot be undone.`;
+            const confirmed = window.ModalUtils
+                ? await window.ModalUtils.confirm(message, { danger: true, confirmText: 'Delete', cancelText: 'Cancel' })
+                : confirm(message);
+            if (!confirmed) return;
 
             try {
                 // REQUIRED: Delete from Supabase first

@@ -94,7 +94,9 @@ async function detectDatabaseSchema() {
                 { table: 'expenses', column: 'group_id', mapping: 'groupId' },
                 { table: 'expenses', column: 'paid_by', mapping: 'paidBy' },
                 { table: 'expenses', column: 'split_type', mapping: 'splitType' },
-                { table: 'expenses', column: 'custom_amounts', mapping: 'customAmounts' }
+                { table: 'expenses', column: 'custom_amounts', mapping: 'customAmounts' },
+                // Optional: the "who had what" breakdown of a bill (see supabase-bill-items.sql). Only used if it exists.
+                { table: 'expenses', column: 'bill_items', mapping: 'billItems' }
             ];
 
             // Test all columns in parallel for faster detection (snake_case only - no camelCase to avoid 400 errors)
@@ -118,6 +120,11 @@ async function detectDatabaseSchema() {
             }));
 
             window.splitEasySync.schemaChecked = true;
+            // Is the optional "who had what" column there? (see supabase-bill-items.sql)
+            window.splitEasySync.billItemsSupported = !!SCHEMA_MAPPING.expenses.billItems;
+            console.log('Who had what details can be saved for the group:', window.splitEasySync.billItemsSupported
+                ? 'yes (expenses.bill_items found)'
+                : 'no (expenses.bill_items not found - run supabase-bill-items.sql, then reload)');
             console.log('Database schema detection complete');
             console.log('Final schema mapping:', SCHEMA_MAPPING);
 
@@ -419,6 +426,12 @@ async function syncExpenseToDatabase(expense, groupId) {
             [expenseSchema.customAmounts]: expense.customAmounts || null
         };
 
+        // Only send the "who had what" breakdown if the database has the column, so saving an expense
+        // never fails just because the column has not been added yet.
+        if (expenseSchema.billItems) {
+            expenseRecord[expenseSchema.billItems] = expense.billItems || null;
+        }
+
         console.log('Expense record structure:', expenseRecord);
 
         // Use upsert with onConflict to ensure updates work correctly
@@ -665,7 +678,8 @@ async function fetchAllGroupsFromDatabase() {
                         date: expense[expenseSchema.createdAt] || expense.created_at || expense.createdat,
                         perPersonAmount: expense[expenseSchema.perPersonAmount] || expense.per_person_amount || expense.perpersonamount || 0,
                         splitType: expense[expenseSchema.splitType] || expense.split_type || 'equal',
-                        customAmounts: expense[expenseSchema.customAmounts] || expense.custom_amounts || null
+                        customAmounts: expense[expenseSchema.customAmounts] || expense.custom_amounts || null,
+                        billItems: expense[expenseSchema.billItems || 'bill_items'] || expense.bill_items || null
                     })) : [],
                     totalExpenses: 0,
                     createdAt: group[groupSchema.createdAt] || group.created_at || group.createdat,
@@ -844,7 +858,8 @@ async function fetchGroupFromDatabase(groupId) {
                 date: expense[expenseSchema.createdAt] || expense.created_at || expense.createdat,
                 perPersonAmount: expense[expenseSchema.perPersonAmount] || expense.per_person_amount || expense.perpersonamount || 0,
                 splitType: expense[expenseSchema.splitType] || expense.split_type || 'equal',
-                customAmounts: expense[expenseSchema.customAmounts] || expense.custom_amounts || null
+                customAmounts: expense[expenseSchema.customAmounts] || expense.custom_amounts || null,
+                billItems: expense[expenseSchema.billItems || 'bill_items'] || expense.bill_items || null
             })) : [],
             totalExpenses: 0,
             createdAt: group[groupSchema.createdAt] || group.created_at || group.createdat,

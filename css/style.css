@@ -3267,6 +3267,444 @@ a:focus-visible {
     }
 }
 
+/* ---------------------------------------------------------------
+ * Who had what: split one bill by items
+ * -------------------------------------------------------------- */
+.whw-open {
+    width: 100%;
+    justify-content: center;
+}
+
+.whw-hint {
+    margin: 0 0 var(--space-3);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+}
+
+.whw-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.whw-item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0.75rem;
+    background: var(--surface);
+}
+
+.whw-item-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.whw-name,
+.whw-amount,
+#whwTotal {
+    min-height: 44px;
+    padding: 0 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 1rem;
+    box-sizing: border-box;
+}
+
+.whw-name {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.whw-amount {
+    flex: 0 0 96px;
+    width: 96px;
+    text-align: right;
+}
+
+.whw-name:focus,
+.whw-amount:focus,
+#whwTotal:focus {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 1px;
+}
+
+.whw-remove {
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--gray-100);
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.whw-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+}
+
+.whw-chip {
+    min-height: 34px;
+    padding: 0 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+
+.whw-chip.selected {
+    background: var(--primary-600);
+    border-color: var(--primary-600);
+    color: var(--text-inverse);
+    font-weight: 600;
+}
+
+.whw-chip-all {
+    min-height: 34px;
+    padding: 0 0.5rem;
+    border: 0;
+    background: none;
+    color: var(--primary-700);
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.whw-add {
+    width: 100%;
+    justify-content: center;
+}
+
+.whw-total {
+    margin-top: var(--space-4);
+}
+
+.whw-total #whwTotal {
+    width: 100%;
+}
+
+.whw-summary {
+    margin-top: var(--space-3);
+}
+
+.whw-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.25rem 0;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.whw-people {
+    margin: 0.5rem 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.whw-person {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.whw-person:last-child {
+    border-bottom: 0;
+}
+
+.whw-person-name {
+    display: flex;
+    flex-direction: column;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.whw-person-name small {
+    font-weight: 400;
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+}
+
+.whw-person strong {
+    color: var(--primary-700);
+    font-feature-settings: 'tnum';
+}
+
+.whw-note,
+.whw-warn,
+.whw-ok {
+    margin-top: 0.5rem;
+    font-size: var(--text-sm);
+    line-height: 1.4;
+}
+
+.whw-note { color: var(--text-tertiary); }
+.whw-warn { color: var(--danger-500, #dc2626); font-weight: 600; }
+.whw-ok { color: var(--primary-700); font-weight: 600; }
+
+.whw-scan {
+    margin-bottom: var(--space-3);
+}
+
+.whw-scan-btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.whw-scan-btn:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.whw-scan-status {
+    margin-top: 0.5rem;
+    font-size: var(--text-sm);
+    line-height: 1.4;
+    color: var(--text-secondary);
+}
+
+.whw-scan-status:empty {
+    display: none;
+}
+
+.whw-scan-status {
+    white-space: pre-line;
+}
+
+.whw-scan-raw {
+    margin-top: 0.5rem;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.whw-scan-raw summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.whw-scan-raw pre {
+    margin: 0.5rem 0 0;
+    padding: 0.625rem;
+    max-height: 200px;
+    overflow: auto;
+    background: var(--gray-100);
+    border-radius: var(--radius-md);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    white-space: pre;
+}
+
+.whw-scan-status.warn { color: #b45309; font-weight: 600; }
+.whw-scan-status.ok { color: var(--primary-700); }
+.whw-scan-status.error { color: var(--danger-500, #dc2626); font-weight: 600; }
+
+/* "Who had what" link on an expense row, and the read-only bill view */
+.expense-items-link {
+    display: inline-block;
+    margin: 0.25rem 0 0;
+    padding: 0.25rem 0;
+    border: 0;
+    background: none;
+    color: var(--primary-700);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.expense-items-link:hover {
+    color: var(--primary-600);
+}
+
+/* Add / Edit Expense: summary shown instead of the per-person amount boxes once the bill is split by items */
+.whw-applied {
+    padding: 0.75rem 0.875rem;
+    border: 1px solid var(--border-primary, #e2e8f0);
+    border-radius: 12px;
+    background: var(--bg-secondary, #f8fafc);
+}
+
+.whw-applied-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.whw-applied-title span {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.whw-applied-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+    font-size: 0.9375rem;
+    color: var(--text-primary);
+}
+
+.whw-applied-row span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.whw-applied-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-top: 0.75rem;
+}
+
+.whw-applied-link {
+    padding: 0.25rem 0;
+    border: 0;
+    background: none;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.8125rem;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+/* In the "₹x each" slot beside the edit and delete buttons */
+.per-person-amount .expense-items-link {
+    margin: 0;
+    padding: 0.5rem 0;
+}
+
+.bi-summary {
+    margin-bottom: var(--space-3);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+}
+
+.bi-summary strong {
+    color: var(--text-primary);
+}
+
+.bi-title {
+    margin: var(--space-4) 0 0.5rem;
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+.bi-items,
+.bi-people {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.bi-item,
+.bi-person {
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.bi-item:last-child,
+.bi-person:last-child {
+    border-bottom: 0;
+}
+
+.bi-row,
+.bi-person,
+.bi-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+}
+
+.bi-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.bi-amount {
+    font-feature-settings: 'tnum';
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.bi-who {
+    margin-top: 0.15rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.bi-line {
+    padding: 0.4rem 0.25rem 0;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.bi-person {
+    align-items: center;
+}
+
+.bi-person-name {
+    display: flex;
+    flex-direction: column;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.bi-person-name small {
+    font-weight: 400;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.bi-person strong {
+    color: var(--primary-700);
+    font-feature-settings: 'tnum';
+    white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+    .whw-amount {
+        flex-basis: 84px;
+        width: 84px;
+    }
+}
+
 /* Payer list + chips live in a panel. Always open on wide screens, tucked away on phones. */
 .expense-filter-panel {
     display: flex;
