@@ -1,5 +1,5 @@
 // Force cache update by incrementing version (bump when many changes – old phones get fresh app)
-const CACHE_VERSION = 'splitxpense-v2026100832';
+const CACHE_VERSION = 'splitxpense-v2026100833';
 const CACHE_NAME = CACHE_VERSION;
 
 console.log('🔄 SplitXpense Service Worker Loading with cache:', CACHE_NAME);

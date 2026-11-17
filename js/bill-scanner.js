@@ -322,10 +322,16 @@
     // how big the text is in the photo (too small and it is unreadable, too big and it blurs), so the scanner
     // tries a few. Enlarging is capped at 4x.
     function grayAt(source, target) {
-        const longest = Math.max(source.width, source.height);
+        // When the paper was found, only that part of the photo is used (source.crop, as fractions)
+        const c = source.crop;
+        const sx = c ? Math.round(c.left * source.width) : 0;
+        const sy = c ? Math.round(c.top * source.height) : 0;
+        const sw = c ? Math.max(1, Math.round((c.right - c.left) * source.width)) : source.width;
+        const sh = c ? Math.max(1, Math.round((c.bottom - c.top) * source.height)) : source.height;
+        const longest = Math.max(sw, sh);
         const scale = Math.min(target / longest, 4);
-        const w = Math.max(1, Math.round(source.width * scale));
-        const h = Math.max(1, Math.round(source.height * scale));
+        const w = Math.max(1, Math.round(sw * scale));
+        const h = Math.max(1, Math.round(sh * scale));
         const canvas = document.createElement('canvas');
         canvas.width = w;
         canvas.height = h;
@@ -334,7 +340,7 @@
         ctx.imageSmoothingQuality = 'high';
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(source.image, 0, 0, w, h);
+        ctx.drawImage(source.image, sx, sy, sw, sh, 0, 0, w, h);
 
         const px = ctx.getImageData(0, 0, w, h).data;
         const gray = new Uint8ClampedArray(w * h);
@@ -428,6 +434,84 @@
         return out;
     }
 
+    /**
+     * Finds the sheet of paper in a photo, so the table and background around it are not read as text.
+     * Works on a coarse grid: paper is the biggest bright area, even with print on it, because each cell is
+     * an average. Returns { left, top, right, bottom } as fractions of the image, or null when there is
+     * nothing worth cropping (the photo is already mostly bill, or no clear paper was found).
+     */
+    function findPaperBox(gray, w, h) {
+        const step = Math.max(1, Math.floor(Math.max(w, h) / 120));
+        const gw = Math.floor(w / step), gh = Math.floor(h / step);
+        if (gw < 10 || gh < 10) return null;
+
+        const cells = new Uint8ClampedArray(gw * gh);
+        for (let gy = 0; gy < gh; gy++) {
+            for (let gx = 0; gx < gw; gx++) {
+                let sum = 0;
+                for (let yy = 0; yy < step; yy++) {
+                    const row = (gy * step + yy) * w + gx * step;
+                    for (let xx = 0; xx < step; xx++) sum += gray[row + xx];
+                }
+                cells[gy * gw + gx] = sum / (step * step);
+            }
+        }
+
+        const mask = binarize(cells);
+        let brightSum = 0, brightN = 0, darkSum = 0, darkN = 0;
+        for (let i = 0; i < cells.length; i++) {
+            if (mask[i]) { brightSum += cells[i]; brightN++; } else { darkSum += cells[i]; darkN++; }
+        }
+        if (!brightN || !darkN || brightSum / brightN - darkSum / darkN < 30) return null;   // no clear paper edge
+
+        // Join cells split up by print, then take the biggest bright area
+        const joined = new Uint8Array(cells.length);
+        for (let y = 0; y < gh; y++) {
+            for (let x = 0; x < gw; x++) {
+                const i = y * gw + x;
+                joined[i] = (mask[i] || (x > 0 && mask[i - 1]) || (x < gw - 1 && mask[i + 1]) ||
+                    (y > 0 && mask[i - gw]) || (y < gh - 1 && mask[i + gw])) ? 1 : 0;
+            }
+        }
+        const seen = new Uint8Array(cells.length);
+        let best = null;
+        for (let start = 0; start < joined.length; start++) {
+            if (!joined[start] || seen[start]) continue;
+            const stack = [start];
+            seen[start] = 1;
+            let count = 0, minX = gw, maxX = -1, minY = gh, maxY = -1;
+            while (stack.length) {
+                const i = stack.pop();
+                const x = i % gw, y = (i - x) / gw;
+                if (mask[i]) {
+                    count++;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+                if (x > 0 && joined[i - 1] && !seen[i - 1]) { seen[i - 1] = 1; stack.push(i - 1); }
+                if (x < gw - 1 && joined[i + 1] && !seen[i + 1]) { seen[i + 1] = 1; stack.push(i + 1); }
+                if (y > 0 && joined[i - gw] && !seen[i - gw]) { seen[i - gw] = 1; stack.push(i - gw); }
+                if (y < gh - 1 && joined[i + gw] && !seen[i + gw]) { seen[i + gw] = 1; stack.push(i + gw); }
+            }
+            if (count && (!best || count > best.count)) best = { count: count, minX: minX, maxX: maxX, minY: minY, maxY: maxY };
+        }
+        if (!best) return null;
+
+        const margin = 0.03;
+        const box = {
+            left: Math.max(0, best.minX / gw - margin),
+            top: Math.max(0, best.minY / gh - margin),
+            right: Math.min(1, (best.maxX + 1) / gw + margin),
+            bottom: Math.min(1, (best.maxY + 1) / gh + margin)
+        };
+        const bw = box.right - box.left, bh = box.bottom - box.top;
+        // Only worth it when it removes a real amount of background, and the area is not a sliver
+        if (bw * bh > 0.85 || bw < 0.2 || bh < 0.2) return null;
+        return box;
+    }
+
     function grayToCanvas(gray, w, h) {
         const canvas = document.createElement('canvas');
         canvas.width = w;
@@ -518,8 +602,23 @@
         report({ stage: 'prepare', progress: 0 });
         const source = await openSource(file);
 
-        // Cleaned-up copies are made on demand, once per size
-        const cleaned = {};
+        // A photo taken with the camera has table and background around the bill. Find the paper first, so only
+        // the bill is read. (A photo that is already mostly bill is left as it is.)
+        let paper = null;
+        try {
+            const probe = grayAt(source, 480);
+            paper = findPaperBox(probe.gray, probe.w, probe.h);
+        } catch (e) { paper = null; }
+
+        // Cleaned-up copies are made on demand, once per size and view
+        let cleaned = {};
+        let view = 'full';
+        function useView(next) {
+            if (next === view) return;
+            view = next;
+            source.crop = next === 'crop' ? paper : null;
+            cleaned = {};
+        }
         function cleanedAt(target) {
             if (!cleaned[target]) {
                 const g = grayAt(source, target);
@@ -534,12 +633,18 @@
 
         const PSM = Tesseract.PSM || { SINGLE_COLUMN: '4', SINGLE_BLOCK: '6' };
         // Different sizes first: the right one depends on how big the text is in the photo
-        const attempts = [
+        const A = [
             { size: 1400, mode: 'sharp', psm: PSM.SINGLE_COLUMN },
             { size: 2000, mode: 'sharp', psm: PSM.SINGLE_COLUMN },
             { size: 1000, mode: 'sharp', psm: PSM.SINGLE_COLUMN },
             { size: 1400, mode: 'binary', psm: PSM.SINGLE_BLOCK }
         ];
+        // The order of the reads. With the paper found: the cropped bill at two sizes, then the whole photo once
+        // (in case the crop was wrong), then the other sizes. Without it, just the four ways on the whole photo.
+        const plan = paper
+            ? [{ view: 'crop', a: A[0] }, { view: 'crop', a: A[1] }, { view: 'full', a: A[0] }, { view: 'crop', a: A[2] }, { view: 'crop', a: A[3] }]
+            : A.map(function (a) { return { view: 'full', a: a }; });
+        const attempts = plan;
 
         let attempt = 0;
         const worker = await Tesseract.createWorker('eng', 1, {
@@ -554,11 +659,13 @@
         try {
             for (let i = 0; i < attempts.length; i++) {
                 attempt = i + 1;
-                await worker.setParameters({ tessedit_pageseg_mode: attempts[i].psm, preserve_interword_spaces: '1' });
-                const out = await worker.recognize(imageFor(attempts[i]));
+                useView(attempts[i].view);
+                await worker.setParameters({ tessedit_pageseg_mode: attempts[i].a.psm, preserve_interword_spaces: '1' });
+                const out = await worker.recognize(imageFor(attempts[i].a));
                 const text = (out && out.data && out.data.text) || '';
                 const parsed = parseReceiptText(text);
                 parsed.text = text;
+                parsed.view = attempts[i].view;
                 parsed.score = scoreReading(parsed);
                 if (!best || parsed.score > best.score) best = parsed;
                 if (isVerified(parsed)) break;   // the items add up to the bill: no need to try again
@@ -570,10 +677,10 @@
 
         return {
             items: best.items, total: best.total, subtotal: best.subtotal,
-            warnings: best.warnings, text: best.text, attempts: attempt
+            warnings: best.warnings, text: best.text, attempts: attempt, cropped: best.view === 'crop'
         };
     }
 
     return { parseReceiptText: parseReceiptText, parseAmount: parseAmount, scanBill: scanBill, prepareImage: prepareImage, scoreReading: scoreReading, isVerified: isVerified,
-        _image: { autoContrast: autoContrast, boxBlur: boxBlur, sharpen: sharpen, binarize: binarize } };
+        _image: { autoContrast: autoContrast, boxBlur: boxBlur, sharpen: sharpen, binarize: binarize, findPaperBox: findPaperBox } };
 });

@@ -269,4 +269,33 @@ test('the scanner prefers a reading whose items add up to the sub total', () => 
     assert.ok(scoreReading(exact) > scoreReading(noCheck));
 });
 
+// A synthetic "photo": dark table, a sheet of paper with printed lines on it
+function fakePhoto(w, h, paper) {
+    const gray = new Uint8ClampedArray(w * h).fill(55);
+    for (let y = paper.y0; y < paper.y1; y++) {
+        for (let x = paper.x0; x < paper.x1; x++) {
+            const printed = y % 9 < 3 && x > paper.x0 + 15 && x < paper.x1 - 15;   // dark text-like lines
+            gray[y * w + x] = printed ? 45 : 225;
+        }
+    }
+    return gray;
+}
+
+test('camera photo: the paper is found and the table around it is cut away', () => {
+    const { findPaperBox } = require('../js/bill-scanner.js')._image;
+    const paper = { x0: 120, x1: 300, y0: 100, y1: 500 };
+    const box = findPaperBox(fakePhoto(400, 600, paper), 400, 600);
+    assert.ok(box, 'paper should be found');
+    // the whole sheet is inside the box, with only a little extra around it
+    assert.ok(box.left <= 0.3 && box.right >= 0.75 && box.top <= 100 / 600 && box.bottom >= 500 / 600, JSON.stringify(box));
+    assert.ok(box.left >= 0.15 && box.right <= 0.9 && box.top >= 0.05 && box.bottom <= 0.95, JSON.stringify(box));
+});
+
+test('a photo that is already mostly bill, or has no clear paper, is not cropped', () => {
+    const { findPaperBox } = require('../js/bill-scanner.js')._image;
+    assert.strictEqual(findPaperBox(fakePhoto(400, 600, { x0: 5, x1: 395, y0: 5, y1: 595 }), 400, 600), null);
+    assert.strictEqual(findPaperBox(new Uint8ClampedArray(400 * 600).fill(180), 400, 600), null);
+    assert.strictEqual(findPaperBox(new Uint8ClampedArray(5 * 5).fill(10), 5, 5), null);
+});
+
 console.log('\n' + passed + ' passed' + (process.exitCode ? ', some FAILED' : ''));
