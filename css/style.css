@@ -3465,6 +3465,16 @@ a:focus-visible {
     margin-bottom: var(--space-3);
 }
 
+.whw-scan-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.whw-scan-buttons .whw-scan-btn {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
 .whw-scan-btn {
     width: 100%;
     display: inline-flex;
